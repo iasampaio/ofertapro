@@ -63,6 +63,10 @@ export function ChannelsScreen({
   const [selectedWaId, setSelectedWaId] = useState<string>('');
   const [targetId, setTargetId] = useState('');
   const [telegramToken, setTelegramToken] = useState('');
+  const [loadingGroups, setLoadingGroups] = useState(false);
+  const [fetchedGroups, setFetchedGroups] = useState<
+    Array<{ id: string; name: string; participantsCount: number }>
+  >([]);
 
   useEffect(() => {
     if (settings) {
@@ -162,6 +166,62 @@ export function ChannelsScreen({
       onRefreshSettings();
     } catch (err: any) {
       Alert.alert('Erro', err?.message || 'Não foi possível salvar.');
+    }
+  }
+
+  async function handleFetchWhatsAppGroups() {
+    const accountId = selectedWaId || settings?.whatsappAccounts[0]?.id;
+    if (!accountId) {
+      Alert.alert(
+        'Conecte um WhatsApp primeiro',
+        'Conecte pelo menos 1 número acima para buscar seus grupos automaticamente.'
+      );
+      return;
+    }
+
+    setLoadingGroups(true);
+    try {
+      const res = await api.getWhatsAppGroups(accountId);
+      setFetchedGroups(res.groups);
+      if (res.groups.length === 0) {
+        Alert.alert(
+          'Nenhum grupo encontrado',
+          res.connected
+            ? 'Este WhatsApp ainda não participa de nenhum grupo.'
+            : 'Este WhatsApp ainda está sincronizando ou não foi pareado. Aguarde alguns segundos e tente de novo.'
+        );
+      }
+    } catch (err: any) {
+      Alert.alert('Erro', err?.message || 'Não foi possível buscar os grupos.');
+    } finally {
+      setLoadingGroups(false);
+    }
+  }
+
+  async function handleQuickAddGroup(group: { id: string; name: string }) {
+    const accountId = selectedWaId || settings?.whatsappAccounts[0]?.id;
+    try {
+      await api.addChannel({
+        name: group.name,
+        type: 'whatsapp_group',
+        niche: channelNiche,
+        whatsappAccountId: accountId,
+        targetId: group.id,
+      });
+      onRefreshSettings();
+      Alert.alert(
+        'Grupo adicionado! ✅',
+        `"${group.name}" salvo no nicho ${getNicheLabel(channelNiche)}.`
+      );
+    } catch (err: any) {
+      if (err?.code === 'PRO_REQUIRED') {
+        Alert.alert('Limite do Plano Grátis', err.message, [
+          { text: 'Depois', style: 'cancel' },
+          { text: 'Ver Plano PRO', onPress: onOpenPro },
+        ]);
+      } else {
+        Alert.alert('Erro', err?.message || 'Não foi possível salvar este grupo.');
+      }
     }
   }
 
@@ -550,6 +610,75 @@ export function ChannelsScreen({
           })}
         </ScrollView>
 
+        {channelType === 'whatsapp_group' ? (
+          <View style={{ marginBottom: 12 }}>
+            <TouchableOpacity
+              style={[
+                styles.saveBtn,
+                { backgroundColor: colors.primary, marginBottom: 8 },
+              ]}
+              onPress={handleFetchWhatsAppGroups}
+              disabled={loadingGroups}
+            >
+              {loadingGroups ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.primaryBtnText}>
+                  🔍 Buscar Meus Grupos do WhatsApp Automaticamente
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {fetchedGroups.length > 0 ? (
+              <View
+                style={{
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  borderRadius: 10,
+                  padding: 8,
+                  backgroundColor: colors.inputBg,
+                }}
+              >
+                <Text style={[styles.label, { color: colors.primaryDark }]}>
+                  Toque em "+ Salvar" nos grupos que deseja adicionar ao nicho{' '}
+                  {getNicheLabel(channelNiche)}:
+                </Text>
+                {fetchedGroups.map((g) => (
+                  <View
+                    key={g.id}
+                    style={[
+                      styles.waRow,
+                      { borderBottomColor: colors.border },
+                    ]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.channelName, { color: colors.text }]}>
+                        👥 {g.name}
+                      </Text>
+                      <Text style={[styles.channelIdSmall, { color: colors.textMuted }]}>
+                        {g.participantsCount} participantes
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={{
+                        backgroundColor: colors.save,
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 8,
+                      }}
+                      onPress={() => handleQuickAddGroup(g)}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 12 }}>
+                        + Salvar
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
         <TextInput
           style={[styles.input, inputThemeStyle]}
           placeholderTextColor={colors.textMuted}
@@ -558,7 +687,7 @@ export function ChannelsScreen({
           placeholder={
             channelType === 'whatsapp_status'
               ? 'Nome (Ex: Meu Status Ofertas #1)'
-              : 'Nome do grupo (Ex: Achadinhos Casa & Cozinha #1)'
+              : 'Ou digite manualmente o nome do grupo'
           }
         />
         {channelType !== 'whatsapp_status' ? (

@@ -170,7 +170,9 @@ automationRouter.post('/whatsapp-accounts/pair', async (req: AuthenticatedReques
 automationRouter.get('/whatsapp-accounts/:id/groups', async (req: AuthenticatedRequest, res) => {
   try {
     const accountId = String(req.params.id);
-    const groups = await listBaileysGroups(accountId);
+    const accounts = dbStore.listWhatsAppAccounts(req.user!.id);
+    const acc = accounts.find((a) => a.id === accountId);
+    const groups = await listBaileysGroups(accountId, acc?.phoneNumber || '');
     res.json({
       connected: isBaileysConnected(accountId),
       groups,

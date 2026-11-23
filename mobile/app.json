@@ -29,6 +29,9 @@
     },
     "extra": {
       "apiUrl": "https://ofertapro-api.onrender.com"
-    }
+    },
+    "plugins": [
+      "expo-sharing"
+    ]
   }
 }

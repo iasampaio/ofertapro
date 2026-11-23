@@ -222,39 +222,61 @@ export async function sendBaileysImage(
       ? targetJid
       : `${targetJid.replace(/\D/g, '')}@s.whatsapp.net`;
 
+  // Baixa a foto como Buffer para garantir exibição em todos os CDNs (Shopee, Amazon, ML, AliExpress)
+  let imagePayload: { url: string } | Buffer = { url: imageUrl };
+  try {
+    const imgRes = await fetch(imageUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+      },
+    });
+    if (imgRes.ok) {
+      imagePayload = Buffer.from(await imgRes.arrayBuffer());
+    }
+  } catch {
+    // Fallback para URL direta
+  }
+
   if (jid === 'status@broadcast') {
     await entry.sock.sendMessage(
       'status@broadcast',
-      { image: { url: imageUrl }, caption },
+      { image: imagePayload, caption },
       { broadcast: true }
     );
-    return { success: true, message: 'Publicado no Status do WhatsApp!' };
+    return { success: true, message: 'Publicado no Status do WhatsApp com foto!' };
   }
 
   await entry.sock.sendMessage(jid, {
-    image: { url: imageUrl },
+    image: imagePayload,
     caption,
   });
 
-  return { success: true, message: 'Enviado no WhatsApp com sucesso!' };
+  return { success: true, message: 'Enviado no WhatsApp com foto!' };
 }
 
 export async function listBaileysGroups(
-  accountId: string
+  accountId: string,
+  phoneNumber = ''
 ): Promise<Array<{ id: string; name: string; participantsCount: number }>> {
-  const entry = sessions.get(accountId);
+  let entry: ActiveSession | null | undefined = sessions.get(accountId);
   if (!entry || !entry.connected) {
+    entry = await reconnectBaileysSession(accountId, phoneNumber);
+  }
+  if (!entry || !entry.sock) {
     return [];
   }
   const groupsObj = (await entry.sock.groupFetchAllParticipating()) as Record<
     string,
     { id: string; subject?: string; participants?: unknown[] }
   >;
-  return Object.values(groupsObj).map((g) => ({
-    id: g.id,
-    name: g.subject || g.id,
-    participantsCount: g.participants?.length || 0,
-  }));
+  return Object.values(groupsObj)
+    .map((g) => ({
+      id: g.id,
+      name: g.subject || g.id,
+      participantsCount: g.participants?.length || 0,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function isBaileysConnected(accountId: string): boolean {

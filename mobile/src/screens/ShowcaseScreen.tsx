@@ -16,6 +16,7 @@ import * as Clipboard from 'expo-clipboard';
 import { AdBanner } from '../components/AdBanner';
 import { OfferCard } from '../components/OfferCard';
 import { api, Offer, StoreCoupon, StoreId } from '../services/api';
+import { shareOfferWithPhoto } from '../services/shareOffer';
 import { STORE_META, useTheme } from '../theme';
 
 const STORES: Array<{ id: StoreId | 'all'; label: string }> = [
@@ -75,11 +76,10 @@ export function ShowcaseScreen({ isPro }: ShowcaseScreenProps) {
 
   async function handleShareOffer(offer: Offer) {
     const storeLabel = STORE_META[offer.store].label;
-    await Share.share({
-      message: `🔥 Achadinho na ${storeLabel}!\n${offer.title}\nPor R$ ${offer.price
-        .toFixed(2)
-        .replace('.', ',')} (-${offer.discountPercent}% OFF)\n👉 ${offer.affiliateUrl}`,
-    });
+    const text = `🔥 Achadinho na ${storeLabel}!\n${offer.title}\nPor R$ ${offer.price
+      .toFixed(2)
+      .replace('.', ',')} (-${offer.discountPercent}% OFF)\n👉 ${offer.affiliateUrl}`;
+    await shareOfferWithPhoto(offer.imageUrl, text);
   }
 
   async function handleCopyAndUseCoupon(coupon: StoreCoupon) {

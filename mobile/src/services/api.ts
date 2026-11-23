@@ -268,6 +268,12 @@ export const api = {
       method: 'DELETE',
     }),
 
+  getWhatsAppGroups: (accountId: string) =>
+    request<{
+      connected: boolean;
+      groups: Array<{ id: string; name: string; participantsCount: number }>;
+    }>(`/api/automation/whatsapp-accounts/${accountId}/groups`),
+
   addChannel: (payload: {
     name: string;
     type: ChannelType;

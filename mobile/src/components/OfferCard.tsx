@@ -1,5 +1,12 @@
 import React from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Image,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { Offer } from '../services/api';
 import { STORE_META, useTheme } from '../theme';
 
@@ -21,19 +28,33 @@ export function OfferCard({
   showCommission = false,
 }: OfferCardProps) {
   const { colors } = useTheme();
+  const { width } = useWindowDimensions();
+  const isCompact = width < 360;
+  const imgSize = isCompact ? 76 : 92;
   const storeInfo = STORE_META[offer.store];
 
   return (
     <View
       style={[
         styles.card,
-        { backgroundColor: colors.card, borderColor: colors.border },
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+          padding: isCompact ? 10 : 12,
+        },
       ]}
     >
       <View style={styles.row}>
         <Image
           source={{ uri: offer.imageUrl }}
-          style={[styles.image, { backgroundColor: colors.inputBg }]}
+          style={[
+            styles.image,
+            {
+              width: imgSize,
+              height: imgSize,
+              backgroundColor: colors.inputBg,
+            },
+          ]}
         />
         <View style={styles.info}>
           <View style={styles.badges}>
@@ -56,12 +77,23 @@ export function OfferCard({
             ) : null}
           </View>
 
-          <Text style={[styles.title, { color: colors.text }]} numberOfLines={2}>
+          <Text
+            style={[
+              styles.title,
+              { color: colors.text, fontSize: isCompact ? 13 : 14 },
+            ]}
+            numberOfLines={2}
+          >
             {offer.title}
           </Text>
 
           <View style={styles.priceRow}>
-            <Text style={[styles.price, { color: colors.primary }]}>
+            <Text
+              style={[
+                styles.price,
+                { color: colors.primary, fontSize: isCompact ? 16 : 18 },
+              ]}
+            >
               R$ {offer.price.toFixed(2).replace('.', ',')}
             </Text>
             {offer.originalPrice ? (
@@ -81,18 +113,25 @@ export function OfferCard({
 
       <View style={styles.actions}>
         <TouchableOpacity
+          activeOpacity={0.78}
           style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
           onPress={() => onPrimaryPress(offer)}
         >
-          <Text style={styles.primaryBtnText}>{primaryLabel}</Text>
+          <Text style={styles.primaryBtnText} numberOfLines={1}>
+            {primaryLabel}
+          </Text>
         </TouchableOpacity>
 
         {secondaryLabel && onSecondaryPress ? (
           <TouchableOpacity
+            activeOpacity={0.78}
             style={[styles.secondaryBtn, { backgroundColor: colors.primarySoft }]}
             onPress={() => onSecondaryPress(offer)}
           >
-            <Text style={[styles.secondaryBtnText, { color: colors.primaryDark }]}>
+            <Text
+              style={[styles.secondaryBtnText, { color: colors.primaryDark }]}
+              numberOfLines={1}
+            >
               {secondaryLabel}
             </Text>
           </TouchableOpacity>
@@ -105,49 +144,46 @@ export function OfferCard({
 const styles = StyleSheet.create({
   card: {
     borderRadius: 14,
-    padding: 12,
     marginBottom: 12,
     borderWidth: 1,
   },
   row: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   image: {
-    width: 92,
-    height: 92,
     borderRadius: 10,
   },
   info: {
     flex: 1,
+    minWidth: 0,
   },
   badges: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 6,
+    gap: 5,
+    marginBottom: 5,
   },
   badge: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 6,
   },
   badgeText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
   },
   title: {
-    fontSize: 14,
     fontWeight: '600',
-    marginBottom: 6,
+    marginBottom: 5,
   },
   priceRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    gap: 8,
+    flexWrap: 'wrap',
+    gap: 6,
   },
   price: {
-    fontSize: 18,
     fontWeight: '800',
   },
   originalPrice: {
@@ -156,17 +192,18 @@ const styles = StyleSheet.create({
   },
   coupon: {
     marginTop: 4,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
   },
   actions: {
     flexDirection: 'row',
     gap: 8,
-    marginTop: 12,
+    marginTop: 10,
   },
   primaryBtn: {
     flex: 1,
     paddingVertical: 10,
+    paddingHorizontal: 10,
     borderRadius: 10,
     alignItems: 'center',
   },

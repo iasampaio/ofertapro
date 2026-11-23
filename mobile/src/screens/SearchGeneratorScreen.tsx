@@ -3,16 +3,17 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
 import { OfferCard } from '../components/OfferCard';
 import { ProBanner } from '../components/ProBadge';
 import {
@@ -22,7 +23,10 @@ import {
   NicheId,
   Offer,
 } from '../services/api';
+import { shareOfferWithPhoto } from '../services/shareOffer';
 import { useTheme } from '../theme';
+
+type PostTargetMode = 'groups' | 'status' | 'both';
 
 interface SearchGeneratorScreenProps {
   settings: AutomationSettings | null;
@@ -36,14 +40,20 @@ export function SearchGeneratorScreen({
   onOpenPro,
 }: SearchGeneratorScreenProps) {
   const { colors } = useTheme();
+  const { width } = useWindowDimensions();
+  const isCompact = width < 360;
+
   const [query, setQuery] = useState('');
   const [selectedNiche, setSelectedNiche] = useState<NicheId>('todos');
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Modal de disparo / escolha de destino (Grupo, Status ou Ambos)
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
+  const [postTarget, setPostTarget] = useState<PostTargetMode>('groups');
   const [caption, setCaption] = useState('');
   const [selectedChannelIds, setSelectedChannelIds] = useState<string[]>([]);
+  const [selectedWaAccountIds, setSelectedWaAccountIds] = useState<string[]>([]);
   const [scheduleMinutes, setScheduleMinutes] = useState('15');
   const [sending, setSending] = useState(false);
 
@@ -76,6 +86,7 @@ export function SearchGeneratorScreen({
 
   async function openComposer(offer: Offer) {
     setSelectedOffer(offer);
+    setPostTarget('groups');
     setCaption('Gerando copy persuasiva...');
 
     const activeChannels = (settings?.channels || []).filter((c) => c.enabled);
@@ -86,6 +97,7 @@ export function SearchGeneratorScreen({
             (c) => c.niche === selectedNiche || c.niche === 'todos'
           );
     setSelectedChannelIds(matching.map((c) => c.id));
+    setSelectedWaAccountIds((settings?.whatsappAccounts || []).map((a) => a.id));
 
     try {
       const res = await api.generateCopy(offer);
@@ -103,61 +115,57 @@ export function SearchGeneratorScreen({
     );
   }
 
+  function toggleWaAccountSelection(id: string) {
+    setSelectedWaAccountIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  }
+
   async function handleOneTapShare() {
-    if (!caption) return;
-    await Clipboard.setStringAsync(caption);
-    await Share.share({ message: caption });
+    if (!caption || !selectedOffer) return;
+    await shareOfferWithPhoto(selectedOffer.imageUrl, caption);
   }
 
-  async function handlePostStatus() {
-    if (!selectedOffer) return;
-
-    if (settings && settings.whatsappAccounts.length > 0) {
-      setSending(true);
-      try {
-        const res = await api.dispatchStatus(selectedOffer);
-        const summary = res.results
-          .map((r) => `${r.success ? '✅' : '❌'} ${r.channelName}: ${r.message}`)
-          .join('\n');
-        Alert.alert('Postagem no Status 🟢', summary);
-        onRefreshSettings();
-        setSelectedOffer(null);
-      } catch (err: any) {
-        if (err?.code === 'PRO_REQUIRED') {
-          Alert.alert('Limite do Plano Grátis', err.message, [
-            { text: 'Depois', style: 'cancel' },
-            { text: 'Ver Plano PRO', onPress: onOpenPro },
-          ]);
-        } else {
-          Alert.alert('Erro no Status', err?.message || 'Falha ao postar no Status');
-        }
-      } finally {
-        setSending(false);
-      }
-      return;
-    }
-
-    const statusText = `🔥 OFERTA (-${selectedOffer.discountPercent}% OFF)\n${selectedOffer.title}\n✅ Por R$ ${selectedOffer.price
-      .toFixed(2)
-      .replace('.', ',')}\n👉 ${selectedOffer.affiliateUrl}`;
-    await Clipboard.setStringAsync(statusText);
-    await Share.share({ message: statusText });
-  }
-
-  async function handleDispatchNow() {
+  async function handlePublishNow() {
     if (!selectedOffer) return;
     setSending(true);
+    const messages: string[] = [];
+
     try {
-      const res = await api.dispatchNow(
-        selectedOffer,
-        caption,
-        selectedChannelIds,
-        selectedNiche
-      );
-      const summary = res.results
-        .map((r) => `${r.success ? '✅' : '❌'} ${r.channelName}: ${r.message}`)
-        .join('\n');
-      Alert.alert('Resultado do Disparo', summary);
+      if (postTarget === 'groups' || postTarget === 'both') {
+        const res = await api.dispatchNow(
+          selectedOffer,
+          caption,
+          selectedChannelIds,
+          selectedNiche
+        );
+        messages.push(
+          ...res.results.map(
+            (r) => `${r.success ? '✅' : '❌'} ${r.channelName}: ${r.message}`
+          )
+        );
+      }
+
+      if (postTarget === 'status' || postTarget === 'both') {
+        if (settings && settings.whatsappAccounts.length > 0) {
+          const res = await api.dispatchStatus(
+            selectedOffer,
+            caption,
+            selectedWaAccountIds
+          );
+          messages.push(
+            ...res.results.map(
+              (r) => `${r.success ? '✅' : '❌'} ${r.channelName}: ${r.message}`
+            )
+          );
+        } else {
+          await shareOfferWithPhoto(selectedOffer.imageUrl, caption);
+          setSending(false);
+          return;
+        }
+      }
+
+      Alert.alert('Resultado da Postagem 🚀', messages.join('\n') || 'Concluído!');
       onRefreshSettings();
       setSelectedOffer(null);
     } catch (err: any) {
@@ -167,7 +175,7 @@ export function SearchGeneratorScreen({
           { text: 'Ver Plano PRO', onPress: onOpenPro },
         ]);
       } else {
-        Alert.alert('Erro', err?.message || 'Falha no disparo');
+        Alert.alert('Erro ao postar', err?.message || 'Falha no disparo');
       }
     } finally {
       setSending(false);
@@ -190,7 +198,7 @@ export function SearchGeneratorScreen({
       );
       Alert.alert(
         'Agendado na Nuvem ☁️',
-        `Oferta agendada para daqui a ${mins} min em ${selectedChannelIds.length} grupo(s)!`
+        `Oferta agendada para daqui a ${mins} min em ${selectedChannelIds.length} destino(s)!`
       );
       setSelectedOffer(null);
     } catch (err: any) {
@@ -258,13 +266,25 @@ export function SearchGeneratorScreen({
     }
   }
 
+  const targetButtonLabel =
+    postTarget === 'groups'
+      ? '✅ Postar nos Grupos Selecionados'
+      : postTarget === 'status'
+      ? '✅ Postar no Status do WhatsApp'
+      : '✅ Postar nos Grupos + Status';
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Text style={[styles.headerTitle, { color: colors.text }]}>
+      <Text
+        style={[
+          styles.headerTitle,
+          { color: colors.text, fontSize: isCompact ? 19 : 22 },
+        ]}
+      >
         🤖 Automação por Nicho
       </Text>
       <Text style={[styles.headerSub, { color: colors.textMuted }]}>
-        Escolha o nicho, filtre ofertas e dispare nos grupos ou Status do WhatsApp.
+        Escolha o nicho, gere sua copy e escolha onde postar: Grupos ou Status.
       </Text>
 
       {settings ? (
@@ -287,6 +307,7 @@ export function SearchGeneratorScreen({
           return (
             <TouchableOpacity
               key={n.id}
+              activeOpacity={0.78}
               style={[
                 styles.nicheChip,
                 {
@@ -310,6 +331,7 @@ export function SearchGeneratorScreen({
       </ScrollView>
 
       <TouchableOpacity
+        activeOpacity={0.8}
         style={[
           styles.batchBtn,
           {
@@ -343,6 +365,7 @@ export function SearchGeneratorScreen({
           onSubmitEditing={() => searchProducts()}
         />
         <TouchableOpacity
+          activeOpacity={0.8}
           style={[styles.searchBtn, { backgroundColor: colors.primary }]}
           onPress={() => searchProducts()}
         >
@@ -360,7 +383,7 @@ export function SearchGeneratorScreen({
             <OfferCard
               offer={item}
               showCommission
-              primaryLabel="Gerar Copy e Disparar 🚀"
+              primaryLabel="Escolher Onde Postar 🚀"
               onPrimaryPress={openComposer}
             />
           )}
@@ -368,55 +391,143 @@ export function SearchGeneratorScreen({
         />
       )}
 
+      {/* MODAL RESPONSIVO: ESCOLHER ONDE POSTAR (GRUPOS, STATUS OU AMBOS) */}
       <Modal visible={Boolean(selectedOffer)} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
           <ScrollView
             style={[styles.modalCard, { backgroundColor: colors.card }]}
-            contentContainerStyle={{ paddingBottom: 24 }}
+            contentContainerStyle={{ paddingBottom: 28 }}
+            keyboardShouldPersistTaps="handled"
           >
             <Text style={[styles.modalTitle, { color: colors.text }]}>
-              ✨ Disparar / Agendar Oferta
+              ✨ Onde você quer postar?
             </Text>
 
-            <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
-              Grupos de destino ({selectedChannelIds.length} selecionado(s)):
-            </Text>
-            {settings && settings.channels.length > 0 ? (
-              <View style={styles.groupsWrap}>
-                {settings.channels.map((ch) => {
-                  const isSelected = selectedChannelIds.includes(ch.id);
-                  return (
-                    <TouchableOpacity
-                      key={ch.id}
+            {/* SELETOR DE DESTINO: GRUPOS / STATUS / AMBOS */}
+            <View style={[styles.targetTabs, { backgroundColor: colors.inputBg }]}>
+              {(
+                [
+                  { id: 'groups', label: '👥 Grupos' },
+                  { id: 'status', label: '🟢 Status WA' },
+                  { id: 'both', label: '🚀 Ambos' },
+                ] as const
+              ).map((t) => {
+                const active = postTarget === t.id;
+                return (
+                  <TouchableOpacity
+                    key={t.id}
+                    activeOpacity={0.8}
+                    style={[
+                      styles.targetTab,
+                      active && { backgroundColor: colors.primary },
+                    ]}
+                    onPress={() => setPostTarget(t.id)}
+                  >
+                    <Text
                       style={[
-                        styles.groupChip,
-                        {
-                          borderColor: isSelected ? colors.save : colors.border,
-                          backgroundColor: isSelected
-                            ? colors.successSoft
-                            : colors.inputBg,
-                        },
+                        styles.targetTabText,
+                        { color: active ? '#FFFFFF' : colors.textMuted },
                       ]}
-                      onPress={() => toggleChannelSelection(ch.id)}
                     >
-                      <Text
-                        style={[
-                          styles.groupChipText,
-                          { color: isSelected ? colors.save : colors.text },
-                        ]}
-                      >
-                        {isSelected ? '☑️ ' : '⬜ '}
-                        {ch.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                      {t.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* SELEÇÃO DE GRUPOS */}
+            {postTarget === 'groups' || postTarget === 'both' ? (
+              <View style={{ marginBottom: 10 }}>
+                <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
+                  Grupos selecionados ({selectedChannelIds.length}):
+                </Text>
+                {settings && settings.channels.length > 0 ? (
+                  <View style={styles.groupsWrap}>
+                    {settings.channels.map((ch) => {
+                      const isSelected = selectedChannelIds.includes(ch.id);
+                      return (
+                        <TouchableOpacity
+                          key={ch.id}
+                          style={[
+                            styles.groupChip,
+                            {
+                              borderColor: isSelected ? colors.save : colors.border,
+                              backgroundColor: isSelected
+                                ? colors.successSoft
+                                : colors.inputBg,
+                            },
+                          ]}
+                          onPress={() => toggleChannelSelection(ch.id)}
+                        >
+                          <Text
+                            style={[
+                              styles.groupChipText,
+                              { color: isSelected ? colors.save : colors.text },
+                            ]}
+                          >
+                            {isSelected ? '☑️ ' : '⬜ '}
+                            {ch.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <Text style={[styles.noGroupHint, { color: colors.warning }]}>
+                    Nenhum grupo salvo ainda — busque seus grupos na aba ⚙️ Canais ou use o Compartilhamento com Foto abaixo.
+                  </Text>
+                )}
               </View>
-            ) : (
-              <Text style={[styles.noGroupHint, { color: colors.warning }]}>
-                Nenhum grupo cadastrado ainda — cadastre seus grupos na aba ⚙️ Canais ou use o Compartilhamento em 1 Toque abaixo.
-              </Text>
-            )}
+            ) : null}
+
+            {/* SELEÇÃO DE WHATSAPPS PARA STATUS */}
+            {postTarget === 'status' || postTarget === 'both' ? (
+              <View style={{ marginBottom: 10 }}>
+                <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
+                  Postar no Status de quais WhatsApps ({selectedWaAccountIds.length}):
+                </Text>
+                {settings && settings.whatsappAccounts.length > 0 ? (
+                  <View style={styles.groupsWrap}>
+                    {settings.whatsappAccounts.map((acc) => {
+                      const isSelected = selectedWaAccountIds.includes(acc.id);
+                      return (
+                        <TouchableOpacity
+                          key={acc.id}
+                          style={[
+                            styles.groupChip,
+                            {
+                              borderColor: isSelected ? colors.save : colors.border,
+                              backgroundColor: isSelected
+                                ? colors.successSoft
+                                : colors.inputBg,
+                            },
+                          ]}
+                          onPress={() => toggleWaAccountSelection(acc.id)}
+                        >
+                          <Text
+                            style={[
+                              styles.groupChipText,
+                              { color: isSelected ? colors.save : colors.text },
+                            ]}
+                          >
+                            {isSelected ? '🟢 ' : '⬜ '}
+                            {acc.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <Text style={[styles.noGroupHint, { color: colors.warning }]}>
+                    Nenhum WhatsApp conectado na nuvem — ao clicar em Postar, vamos abrir a foto + legenda para você colar no Meu Status em 1 toque!
+                  </Text>
+                )}
+              </View>
+            ) : null}
 
             <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
               Legenda pronta (editável):
@@ -455,17 +566,21 @@ export function SearchGeneratorScreen({
             </View>
 
             <TouchableOpacity
-              style={[styles.modalBtn, { backgroundColor: colors.primary }]}
-              onPress={handleDispatchNow}
+              activeOpacity={0.8}
+              style={[styles.modalBtn, { backgroundColor: colors.save }]}
+              onPress={handlePublishNow}
               disabled={sending}
             >
-              <Text style={styles.modalBtnText}>
-                🚀 Disparar Agora nos Grupos Selecionados
-              </Text>
+              {sending ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.modalBtnText}>{targetButtonLabel}</Text>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.modalBtn, { backgroundColor: colors.secondary }]}
+              activeOpacity={0.8}
+              style={[styles.modalBtn, { backgroundColor: colors.primary }]}
               onPress={handleScheduleCloud}
               disabled={sending}
             >
@@ -473,21 +588,12 @@ export function SearchGeneratorScreen({
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.modalBtn, { backgroundColor: colors.save }]}
-              onPress={handlePostStatus}
-              disabled={sending}
-            >
-              <Text style={styles.modalBtnText}>
-                🟢 Postar no Status do WhatsApp
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
+              activeOpacity={0.8}
               style={[styles.modalBtn, { backgroundColor: colors.lilac }]}
               onPress={handleOneTapShare}
             >
               <Text style={styles.modalBtnText}>
-                📲 Compartilhar em 1 Toque (WhatsApp / Insta)
+                📸 Compartilhar Foto + Legenda em 1 Toque
               </Text>
             </TouchableOpacity>
 
@@ -500,13 +606,20 @@ export function SearchGeneratorScreen({
               </Text>
             </TouchableOpacity>
           </ScrollView>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* MODAL CONFIGURÁVEL DO PILOTO AUTOMÁTICO (PRO) */}
       <Modal visible={autopilotOpen} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <ScrollView
+            style={[styles.modalCard, { backgroundColor: colors.card }]}
+            contentContainerStyle={{ paddingBottom: 24 }}
+            keyboardShouldPersistTaps="handled"
+          >
             <Text style={[styles.modalTitle, { color: colors.text }]}>
               ⚡ Configurar Piloto Automático
             </Text>
@@ -640,6 +753,7 @@ export function SearchGeneratorScreen({
             </View>
 
             <TouchableOpacity
+              activeOpacity={0.8}
               style={[styles.modalBtn, { backgroundColor: colors.save, marginTop: 8 }]}
               onPress={handleConfirmAutopilot}
               disabled={autoLoading}
@@ -661,8 +775,8 @@ export function SearchGeneratorScreen({
                 Cancelar
               </Text>
             </TouchableOpacity>
-          </View>
-        </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -671,11 +785,10 @@ export function SearchGeneratorScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingHorizontal: 14,
+    paddingTop: 10,
   },
   headerTitle: {
-    fontSize: 22,
     fontWeight: '800',
   },
   headerSub: {
@@ -739,13 +852,30 @@ const styles = StyleSheet.create({
   modalCard: {
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    padding: 20,
-    maxHeight: '90%',
+    padding: 18,
+    maxHeight: '92%',
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '800',
     marginBottom: 10,
+  },
+  targetTabs: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    padding: 4,
+    marginBottom: 12,
+    gap: 4,
+  },
+  targetTab: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  targetTabText: {
+    fontSize: 12,
+    fontWeight: '800',
   },
   modalLabel: {
     fontSize: 12,
@@ -756,7 +886,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   groupChip: {
     paddingHorizontal: 10,
@@ -770,13 +900,13 @@ const styles = StyleSheet.create({
   },
   noGroupHint: {
     fontSize: 12,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   captionInput: {
     borderWidth: 1,
     borderRadius: 10,
     padding: 12,
-    height: 140,
+    height: 125,
     textAlignVertical: 'top',
     fontSize: 13,
     marginBottom: 12,
@@ -792,10 +922,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   minutesInput: {
-    width: 80,
+    width: 76,
     borderWidth: 1,
     borderRadius: 8,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 6,
     textAlign: 'center',
     fontWeight: '700',
