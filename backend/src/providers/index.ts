@@ -13,12 +13,17 @@ export async function searchOffersAcrossStores(
 
   const results = await Promise.all(
     selected.map(async (store) => {
-      if (store === 'shopee') {
-        const res = await searchShopeeOffers(keyword, credentials, niche);
-        return { store, ...res };
+      try {
+        if (store === 'shopee') {
+          const res = await searchShopeeOffers(keyword, credentials, niche);
+          return { store, offers: res.offers, mode: res.mode };
+        }
+        const res = await searchOtherStoreOffers(store, keyword, credentials, niche);
+        return { store, offers: res.offers, mode: res.mode };
+      } catch (err) {
+        console.warn(`[Providers] Falha na loja ${store}:`, err);
+        return { store, offers: [] as Offer[], mode: 'demo' as const };
       }
-      const res = await searchOtherStoreOffers(store, keyword, credentials, niche);
-      return { store, ...res };
     })
   );
 

@@ -226,15 +226,15 @@ export async function searchShopeeOffers(
   credentials: AffiliateCredentials,
   niche: NicheId = 'todos',
   limit = 12
-): Promise<{ offers: Offer[]; mode: 'live' | 'demo' }> {
-  const appId = credentials.shopeeAppId || process.env.SHOPEE_APP_ID;
-  const appSecret = credentials.shopeeAppSecret || process.env.SHOPEE_APP_SECRET;
+): Promise<{ offers: Offer[]; mode: 'live' | 'demo'; error?: string }> {
+  const appId = (credentials.shopeeAppId || process.env.SHOPEE_APP_ID || '').trim();
+  const appSecret = (credentials.shopeeAppSecret || process.env.SHOPEE_APP_SECRET || '').trim();
 
   const nicheInfo = NICHES.find((n) => n.id === niche);
   const effectiveKeyword =
     keyword.trim() || (niche !== 'todos' ? nicheInfo?.searchKeyword || '' : '');
 
-  if (!appId || !appSecret) {
+  const getDemoFallback = (errorMsg?: string) => {
     let list = DEMO_SHOPEE_OFFERS;
     if (niche !== 'todos') {
       list = list.filter((o) => o.niche === niche);
@@ -247,68 +247,106 @@ export async function searchShopeeOffers(
       );
     }
     return {
-      offers: list.length > 0 ? list : DEMO_SHOPEE_OFFERS.slice(0, 4),
-      mode: 'demo',
+      offers: list.length > 0 ? list : DEMO_SHOPEE_OFFERS.slice(0, 6),
+      mode: 'demo' as const,
+      error: errorMsg,
     };
+  };
+
+  if (!appId || !appSecret || appId === '-' || appSecret === '-') {
+    return getDemoFallback();
   }
 
-  const query = `
-    query SearchOffers($keyword: String, $limit: Int) {
-      productOfferV2(keyword: $keyword, listType: 2, sortType: 2, limit: $limit) {
-        nodes {
-          itemId
-          productName
-          priceMin
-          priceMax
-          priceDiscountRate
-          commissionRate
-          imageUrl
-          productLink
-          offerLink
-          ratingStar
-          sales
-          shopName
+  try {
+    // Na API oficial da Shopee, não enviar `listType` quando `keyword` estiver preenchido
+    const query = effectiveKeyword
+      ? `
+        query SearchOffers($keyword: String, $limit: Int) {
+          productOfferV2(keyword: $keyword, sortType: 2, page: 1, limit: $limit) {
+            nodes {
+              itemId
+              productName
+              priceMin
+              priceMax
+              priceDiscountRate
+              commissionRate
+              imageUrl
+              productLink
+              offerLink
+              ratingStar
+              sales
+              shopName
+            }
+          }
         }
-      }
+      `
+      : `
+        query TopOffers($limit: Int) {
+          productOfferV2(listType: 1, sortType: 2, page: 1, limit: $limit) {
+            nodes {
+              itemId
+              productName
+              priceMin
+              priceMax
+              priceDiscountRate
+              commissionRate
+              imageUrl
+              productLink
+              offerLink
+              ratingStar
+              sales
+              shopName
+            }
+          }
+        }
+      `;
+
+    const variables = effectiveKeyword
+      ? { keyword: effectiveKeyword, limit }
+      : { limit };
+
+    const data = await callShopeeGraphQL<{
+      productOfferV2: { nodes: ShopeeProductNode[] };
+    }>(appId, appSecret, query, variables);
+
+    const nodes = data.productOfferV2?.nodes || [];
+    if (nodes.length === 0) {
+      return getDemoFallback('Shopee retornou 0 resultados para este termo.');
     }
-  `;
 
-  const data = await callShopeeGraphQL<{
-    productOfferV2: { nodes: ShopeeProductNode[] };
-  }>(appId, appSecret, query, {
-    keyword: effectiveKeyword || undefined,
-    limit,
-  });
+    const offers: Offer[] = nodes.map((n) => {
+      const price = parseFloat(n.priceMin) || 0;
+      const discount = n.priceDiscountRate || 0;
+      const originalPrice =
+        discount > 0 && discount < 100
+          ? Number((price / (1 - discount / 100)).toFixed(2))
+          : undefined;
 
-  const nodes = data.productOfferV2?.nodes || [];
-  const offers: Offer[] = nodes.map((n) => {
-    const price = parseFloat(n.priceMin) || 0;
-    const discount = n.priceDiscountRate || 0;
-    const originalPrice =
-      discount > 0 && discount < 100
-        ? Number((price / (1 - discount / 100)).toFixed(2))
-        : undefined;
+      return {
+        id: `shp-${n.itemId}`,
+        store: 'shopee',
+        title: n.productName,
+        price,
+        originalPrice,
+        discountPercent: discount,
+        commissionRate: parseFloat(n.commissionRate) || 0,
+        imageUrl: n.imageUrl,
+        productUrl: n.productLink,
+        affiliateUrl: n.offerLink || n.productLink,
+        rating: parseFloat(n.ratingStar) || undefined,
+        sales: n.sales,
+        shopName: n.shopName,
+        category: nicheInfo?.label || 'Shopee Ofertas',
+        niche,
+      };
+    });
 
-    return {
-      id: `shp-${n.itemId}`,
-      store: 'shopee',
-      title: n.productName,
-      price,
-      originalPrice,
-      discountPercent: discount,
-      commissionRate: parseFloat(n.commissionRate) || 0,
-      imageUrl: n.imageUrl,
-      productUrl: n.productLink,
-      affiliateUrl: n.offerLink || n.productLink,
-      rating: parseFloat(n.ratingStar) || undefined,
-      sales: n.sales,
-      shopName: n.shopName,
-      category: nicheInfo?.label || 'Shopee Ofertas',
-      niche,
-    };
-  });
-
-  return { offers, mode: 'live' };
+    return { offers, mode: 'live' };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Erro desconhecido na Shopee API';
+    console.warn('[ShopeeAPI] Fallback para demo:', msg);
+    return getDemoFallback(msg);
+  }
 }
 
 export async function generateShopeeShortLink(
