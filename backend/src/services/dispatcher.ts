@@ -1,4 +1,5 @@
 import { DistributionChannel, Offer, WhatsAppAccount } from '../types';
+import { sendBaileysImage } from './whatsappBaileys';
 
 export interface DispatchResult {
   channelId: string;
@@ -58,6 +59,22 @@ async function sendViaWhatsAppAccount(
   offer: Offer,
   caption: string
 ): Promise<DispatchResult> {
+  if (account.provider === 'baileys_native' || (!account.apiUrl && account.provider !== 'cloud_api')) {
+    const res = await sendBaileysImage(
+      account.id,
+      account.phoneNumber,
+      channel.targetId,
+      offer.imageUrl,
+      caption
+    );
+    return {
+      channelId: channel.id,
+      channelName: `${channel.name} (${account.label})`,
+      success: res.success,
+      message: res.message,
+    };
+  }
+
   if (account.provider === 'cloud_api') {
     const phoneNumberId = account.instanceName || process.env.WHATSAPP_PHONE_NUMBER_ID;
     const token = account.apiToken || process.env.WHATSAPP_CLOUD_API_TOKEN;
@@ -168,6 +185,22 @@ export async function sendWhatsAppStatus(
   offer: Offer,
   caption: string
 ): Promise<DispatchResult> {
+  if (account.provider === 'baileys_native' || !account.apiUrl) {
+    const res = await sendBaileysImage(
+      account.id,
+      account.phoneNumber,
+      'status@broadcast',
+      offer.imageUrl,
+      caption
+    );
+    return {
+      channelId: `status-${account.id}`,
+      channelName: `Status (${account.label})`,
+      success: res.success,
+      message: res.message,
+    };
+  }
+
   const baseUrl = account.apiUrl.replace(/\/+$/, '');
   if (!baseUrl) {
     return {

@@ -130,8 +130,8 @@ export interface AutomationSettings {
   channels: DistributionChannel[];
 }
 
-// Em produção, troque pela URL HTTPS do seu backend hospedado (ex: https://api.ofertapro.com.br)
-let baseUrl = Platform.OS === 'web' ? 'http://localhost:3333' : 'http://192.168.1.8:3333';
+// URL oficial do servidor na nuvem (Render.com)
+let baseUrl = 'https://ofertapro-api.onrender.com';
 let authToken: string | null = null;
 
 export function setApiBaseUrl(url: string) {

@@ -724,7 +724,7 @@ export function ChannelsScreen({
           placeholderTextColor={colors.textMuted}
           value={serverUrl}
           onChangeText={setServerUrl}
-          placeholder="http://192.168.1.8:3333"
+          placeholder="https://ofertapro-api.onrender.com"
           autoCapitalize="none"
         />
         <TouchableOpacity

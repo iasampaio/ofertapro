@@ -60,7 +60,11 @@ export interface StoreCoupon {
   affiliateUrl: string;
 }
 
-export type WhatsAppProviderType = 'cloud_api' | 'evolution_webhook' | 'zapi_webhook';
+export type WhatsAppProviderType =
+  | 'baileys_native'
+  | 'cloud_api'
+  | 'evolution_webhook'
+  | 'zapi_webhook';
 
 export interface WhatsAppAccount {
   id: string;

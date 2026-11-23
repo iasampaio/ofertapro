@@ -6,6 +6,11 @@ import { renderOfferCaption, renderStatusCaption } from '../services/copyGenerat
 import { dispatchToChannels, sendWhatsAppStatus } from '../services/dispatcher';
 import { processDueScheduledPosts } from '../services/scheduler';
 import {
+  isBaileysConnected,
+  listBaileysGroups,
+  requestBaileysPairingCode,
+} from '../services/whatsappBaileys';
+import {
   AffiliateCredentials,
   ChannelType,
   NICHES,
@@ -97,11 +102,19 @@ automationRouter.post('/whatsapp-accounts/pair', async (req: AuthenticatedReques
     const evoUrl = (process.env.EVOLUTION_API_URL || '').replace(/\/+$/, '');
     const evoKey = process.env.EVOLUTION_API_KEY || '';
 
+    const account = dbStore.addWhatsAppAccount(user.id, {
+      label: (label || `WhatsApp ${normalizedPhone.slice(-4)}`).trim(),
+      phoneNumber: normalizedPhone,
+      provider: evoUrl && evoKey ? 'evolution_webhook' : 'baileys_native',
+      apiUrl: evoUrl,
+      apiToken: evoKey,
+      instanceName,
+    });
+
     let pairingCode = '';
-    let mode: 'live' | 'demo' = 'demo';
+    let mode: 'live' | 'demo' = 'live';
 
     if (evoUrl && evoKey) {
-      // 1. Cria a instância na Evolution API (ignora se já existir)
       await fetch(`${evoUrl}/instance/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', apikey: evoKey },
@@ -113,7 +126,6 @@ automationRouter.post('/whatsapp-accounts/pair', async (req: AuthenticatedReques
         }),
       }).catch(() => {});
 
-      // 2. Solicita o código de pareamento de 8 dígitos para o número
       const connectRes = await fetch(
         `${evoUrl}/instance/connect/${encodeURIComponent(instanceName)}?number=${normalizedPhone}`,
         {
@@ -128,26 +140,17 @@ automationRouter.post('/whatsapp-accounts/pair', async (req: AuthenticatedReques
           code?: string;
         };
         pairingCode = data.pairingCode || data.code || '';
-        mode = 'live';
       }
+    } else {
+      // Motor nativo Baileys embutido (100% grátis — gera código REAL do WhatsApp!)
+      const paired = await requestBaileysPairingCode(account.id, normalizedPhone);
+      pairingCode = paired.pairingCode;
+      mode = 'live';
     }
 
     if (!pairingCode) {
-      // Modo demonstração quando EVOLUTION_API_URL ainda não foi configurada no servidor
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      const pick = () => chars[Math.floor(Math.random() * chars.length)];
-      pairingCode = `${pick()}${pick()}${pick()}${pick()}-${pick()}${pick()}${pick()}${pick()}`;
-      mode = 'demo';
+      throw new Error('WhatsApp não retornou o código de pareamento. Tente novamente em alguns segundos.');
     }
-
-    const account = dbStore.addWhatsAppAccount(user.id, {
-      label: (label || `WhatsApp ${normalizedPhone.slice(-4)}`).trim(),
-      phoneNumber: normalizedPhone,
-      provider: 'evolution_webhook',
-      apiUrl: evoUrl,
-      apiToken: evoKey,
-      instanceName,
-    });
 
     res.status(201).json({
       account,
@@ -159,6 +162,22 @@ automationRouter.post('/whatsapp-accounts/pair', async (req: AuthenticatedReques
   } catch (err) {
     res.status(500).json({
       error: err instanceof Error ? err.message : 'Erro ao gerar código de pareamento',
+    });
+  }
+});
+
+/** GET /api/automation/whatsapp-accounts/:id/groups — Lista grupos reais do WhatsApp conectado */
+automationRouter.get('/whatsapp-accounts/:id/groups', async (req: AuthenticatedRequest, res) => {
+  try {
+    const accountId = String(req.params.id);
+    const groups = await listBaileysGroups(accountId);
+    res.json({
+      connected: isBaileysConnected(accountId),
+      groups,
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: err instanceof Error ? err.message : 'Erro ao listar grupos do WhatsApp',
     });
   }
 });
