@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "OfertaPro: Achadinhos e Cupom",
+    "slug": "ofertapro-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#7C3AED"
+    },
+    "android": {
+      "package": "com.seudominio.ofertapro",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#7C3AED"
+      },
+      "permissions": [
+        "INTERNET"
+      ]
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.seudominio.ofertapro"
+    },
+    "extra": {
+      "apiUrl": "http://192.168.1.8:3333"
+    }
+  }
+}

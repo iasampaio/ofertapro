@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: ofertapro-api
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22.14.0"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SHOPEE_APP_ID
+        sync: false
+      - key: SHOPEE_APP_SECRET
+        sync: false
+      - key: EVOLUTION_API_URL
+        sync: false
+      - key: EVOLUTION_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
