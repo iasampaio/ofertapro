@@ -11,11 +11,11 @@ interface ActiveSession {
   sock: any;
   connected: boolean;
   phoneNumber: string;
+  lastError?: string;
 }
 
 const sessions = new Map<string, ActiveSession>();
 
-// Carrega o módulo Baileys dinamicamente (instalado no Render via package.json)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function loadBaileys(): Promise<{ baileys: any; pino: any }> {
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
@@ -35,8 +35,8 @@ function getSessionDir(accountId: string): string {
 }
 
 /**
- * Inicia uma sessão real do WhatsApp via Baileys e gera o código oficial de 8 dígitos
- * para o usuário digitar em: WhatsApp → Aparelhos conectados → Conectar com número de telefone.
+ * Inicia uma sessão real do WhatsApp via Baileys, aguarda o WebSocket ficar pronto
+ * (evento `qr`) e solicita o código oficial de 8 dígitos.
  */
 export async function requestBaileysPairingCode(
   accountId: string,
@@ -44,14 +44,8 @@ export async function requestBaileysPairingCode(
 ): Promise<{ pairingCode: string; connected: boolean }> {
   const { baileys, pino } = await loadBaileys();
   const makeWASocket = baileys.default || baileys.makeWASocket;
-  const {
-    useMultiFileAuthState,
-    fetchLatestBaileysVersion,
-    DisconnectReason,
-    Browsers,
-  } = baileys;
+  const { useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason } = baileys;
 
-  // Limpa sessão antiga para garantir pareamento limpo
   const sessionDir = getSessionDir(accountId);
   const existing = sessions.get(accountId);
   if (existing?.sock) {
@@ -78,8 +72,12 @@ export async function requestBaileysPairingCode(
     auth: state,
     logger,
     printQRInTerminal: false,
-    browser: Browsers.ubuntu('Chrome'),
+    // Tupla oficial recomendada pelo Baileys para Pareamento por Número de Telefone
+    browser: ['Ubuntu', 'Chrome', '20.0.04'],
+    markOnlineOnConnect: false,
     syncFullHistory: false,
+    connectTimeoutMs: 30000,
+    keepAliveIntervalMs: 15000,
   });
 
   const entry: ActiveSession = {
@@ -91,34 +89,65 @@ export async function requestBaileysPairingCode(
 
   sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('connection.update', (update: { connection?: string; lastDisconnect?: { error?: { output?: { statusCode?: number } } } }) => {
-    const { connection, lastDisconnect } = update;
-    if (connection === 'open') {
-      entry.connected = true;
-      console.log(`[Baileys] WhatsApp ${phoneNumber} (${accountId}) CONECTADO!`);
-    } else if (connection === 'close') {
-      entry.connected = false;
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      if (shouldReconnect) {
-        setTimeout(() => {
-          reconnectBaileysSession(accountId, phoneNumber).catch(() => {});
-        }, 3000);
-      } else {
-        sessions.delete(accountId);
+  const cleanPhone = phoneNumber.replace(/\D/g, '');
+
+  const pairingCode = await new Promise<string>((resolve, reject) => {
+    let requested = false;
+    const timeout = setTimeout(() => {
+      reject(new Error('Tempo esgotado aguardando o WhatsApp iniciar. Tente novamente.'));
+    }, 25000);
+
+    sock.ev.on(
+      'connection.update',
+      async (update: {
+        connection?: string;
+        qr?: string;
+        lastDisconnect?: { error?: { output?: { statusCode?: number }; message?: string } };
+      }) => {
+        const { connection, qr, lastDisconnect } = update;
+
+        if (qr && !requested) {
+          requested = true;
+          try {
+            const rawCode: string = await sock.requestPairingCode(cleanPhone);
+            clearTimeout(timeout);
+            const formatted =
+              rawCode.length === 8
+                ? `${rawCode.slice(0, 4)}-${rawCode.slice(4)}`
+                : rawCode;
+            console.log(`[Baileys] Código gerado para ${cleanPhone}: ${formatted}`);
+            resolve(formatted);
+          } catch (err) {
+            clearTimeout(timeout);
+            reject(err);
+          }
+        }
+
+        if (connection === 'open') {
+          entry.connected = true;
+          entry.lastError = undefined;
+          console.log(`[Baileys] WhatsApp ${cleanPhone} (${accountId}) CONECTADO!`);
+        } else if (connection === 'close') {
+          entry.connected = false;
+          const statusCode = lastDisconnect?.error?.output?.statusCode;
+          entry.lastError = lastDisconnect?.error?.message || `Code ${statusCode}`;
+          console.log(`[Baileys] Conexão fechada (${cleanPhone}): statusCode=${statusCode}`);
+
+          // Código 515 = restart obrigatório logo após o pareamento (reconecta automaticamente!)
+          const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+          if (shouldReconnect && entry.sock) {
+            setTimeout(() => {
+              reconnectBaileysSession(accountId, cleanPhone).catch(() => {});
+            }, 2000);
+          } else {
+            sessions.delete(accountId);
+          }
+        }
       }
-    }
+    );
   });
 
-  // Aguarda o socket iniciar e solicita o código de pareamento real de 8 dígitos
-  await new Promise((resolve) => setTimeout(resolve, 2200));
-
-  const cleanPhone = phoneNumber.replace(/\D/g, '');
-  const rawCode: string = await sock.requestPairingCode(cleanPhone);
-  const formatted =
-    rawCode.length === 8 ? `${rawCode.slice(0, 4)}-${rawCode.slice(4)}` : rawCode;
-
-  return { pairingCode: formatted, connected: entry.connected };
+  return { pairingCode, connected: entry.connected };
 }
 
 export async function reconnectBaileysSession(
@@ -132,7 +161,7 @@ export async function reconnectBaileysSession(
 
   const { baileys, pino } = await loadBaileys();
   const makeWASocket = baileys.default || baileys.makeWASocket;
-  const { useMultiFileAuthState, fetchLatestBaileysVersion, Browsers } = baileys;
+  const { useMultiFileAuthState, fetchLatestBaileysVersion } = baileys;
 
   const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
   const { version } = await fetchLatestBaileysVersion();
@@ -143,7 +172,8 @@ export async function reconnectBaileysSession(
     auth: state,
     logger,
     printQRInTerminal: false,
-    browser: Browsers.ubuntu('Chrome'),
+    browser: ['Ubuntu', 'Chrome', '20.0.04'],
+    markOnlineOnConnect: false,
     syncFullHistory: false,
   });
 
@@ -158,6 +188,7 @@ export async function reconnectBaileysSession(
   sock.ev.on('connection.update', (update: { connection?: string }) => {
     if (update.connection === 'open') {
       entry.connected = true;
+      console.log(`[Baileys] Reconectado com sucesso: ${phoneNumber}`);
     } else if (update.connection === 'close') {
       entry.connected = false;
     }
