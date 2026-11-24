@@ -59,6 +59,14 @@ export function SearchGeneratorScreen({
   const [scheduleMinutes, setScheduleMinutes] = useState('15');
   const [sending, setSending] = useState(false);
 
+  // Modal "Colar Link Real" (Mercado Livre, Amazon, Shopee, AliExpress)
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
+  const [manualUrl, setManualUrl] = useState('');
+  const [manualTitle, setManualTitle] = useState('');
+  const [manualPrice, setManualPrice] = useState('');
+  const [manualCoupon, setManualCoupon] = useState('');
+  const [parsingLink, setParsingLink] = useState(false);
+
   // Modal de configuração do Piloto Automático (PRO)
   const [autopilotOpen, setAutopilotOpen] = useState(false);
   const [autoTargetMode, setAutoTargetMode] = useState<PostTargetMode>('both');
@@ -234,6 +242,40 @@ export function SearchGeneratorScreen({
     }
   }
 
+  async function handleParseManualLink() {
+    if (!manualUrl.trim().startsWith('http')) {
+      Alert.alert('Atenção', 'Cole um link real começando com https://');
+      return;
+    }
+
+    setParsingLink(true);
+    try {
+      const priceNum = parseFloat(manualPrice.replace(',', '.')) || 0;
+      const res = await api.parseRealLink({
+        url: manualUrl.trim(),
+        title: manualTitle.trim() || undefined,
+        price: priceNum,
+        coupon: manualCoupon.trim() || undefined,
+      });
+      setLinkModalOpen(false);
+      setManualUrl('');
+      setManualTitle('');
+      setManualPrice('');
+      setManualCoupon('');
+
+      setSelectedOffer(res.offer);
+      setPostTarget('groups');
+      setCaption(res.caption);
+      const activeChannels = (settings?.channels || []).filter((c) => c.enabled);
+      setSelectedChannelIds(activeChannels.map((c) => c.id));
+      setSelectedWaAccountIds((settings?.whatsappAccounts || []).map((a) => a.id));
+    } catch (err: any) {
+      Alert.alert('Erro', err?.message || 'Não foi possível ler este link.');
+    } finally {
+      setParsingLink(false);
+    }
+  }
+
   async function handleToggleAutopilot(nextVal: boolean) {
     if (nextVal && settings?.plan !== 'pro') {
       Alert.alert(
@@ -404,6 +446,23 @@ export function SearchGeneratorScreen({
           {settings?.plan === 'pro'
             ? '⚡ Configurar Piloto Automático (08h–22h)'
             : '👑 Piloto Automático por Nicho (Exclusivo PRO)'}
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        activeOpacity={0.8}
+        style={[
+          styles.batchBtn,
+          {
+            backgroundColor: colors.primarySoft,
+            borderWidth: 1,
+            borderColor: colors.primary,
+          },
+        ]}
+        onPress={() => setLinkModalOpen(true)}
+      >
+        <Text style={[styles.batchBtnText, { color: colors.primaryDark }]}>
+          🔗 Colar Link Real (Mercado Livre / Amazon / AliExpress / Shopee)
         </Text>
       </TouchableOpacity>
 
@@ -843,6 +902,131 @@ export function SearchGeneratorScreen({
               <TouchableOpacity
                 style={styles.closeBtn}
                 onPress={() => setAutopilotOpen(false)}
+              >
+                <Text style={[styles.closeBtnText, { color: colors.textMuted }]}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* MODAL COLAR LINK REAL (ML / AMAZON / ALIEXPRESS / SHOPEE) */}
+      <Modal visible={linkModalOpen} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
+            <ScrollView keyboardShouldPersistTaps="handled">
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                🔗 Postar a partir de Link Real
+              </Text>
+              <Text style={[styles.headerSub, { color: colors.textMuted }]}>
+                Cole seu link real de afiliado do Mercado Livre, Amazon, AliExpress ou Shopee — o app monta a legenda chamativa e posta nos grupos ou Status!
+              </Text>
+
+              <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
+                Link de afiliado (obrigatório):
+              </Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.border,
+                    color: colors.text,
+                    marginBottom: 10,
+                  },
+                ]}
+                placeholderTextColor={colors.textMuted}
+                placeholder="https://mercadolivre.com/sec/... ou https://amzn.to/..."
+                value={manualUrl}
+                onChangeText={setManualUrl}
+                autoCapitalize="none"
+              />
+
+              <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
+                Título do produto (opcional — tenta ler automático):
+              </Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.border,
+                    color: colors.text,
+                    marginBottom: 10,
+                  },
+                ]}
+                placeholderTextColor={colors.textMuted}
+                placeholder="Ex: Air Fryer Mondial 4L"
+                value={manualTitle}
+                onChangeText={setManualTitle}
+              />
+
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
+                    Preço R$ (opcional):
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: colors.inputBg,
+                        borderColor: colors.border,
+                        color: colors.text,
+                      },
+                    ]}
+                    placeholderTextColor={colors.textMuted}
+                    placeholder="Ex: 199,90"
+                    keyboardType="decimal-pad"
+                    value={manualPrice}
+                    onChangeText={setManualPrice}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
+                    Cupom (opcional):
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: colors.inputBg,
+                        borderColor: colors.border,
+                        color: colors.text,
+                      },
+                    ]}
+                    placeholderTextColor={colors.textMuted}
+                    placeholder="Ex: MELI20"
+                    value={manualCoupon}
+                    onChangeText={setManualCoupon}
+                    autoCapitalize="characters"
+                  />
+                </View>
+              </View>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={[styles.modalBtn, { backgroundColor: colors.save }]}
+                onPress={handleParseManualLink}
+                disabled={parsingLink}
+              >
+                {parsingLink ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalBtnText}>
+                    ✅ Gerar Oferta e Escolher Onde Postar
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.closeBtn}
+                onPress={() => setLinkModalOpen(false)}
               >
                 <Text style={[styles.closeBtnText, { color: colors.textMuted }]}>
                   Cancelar

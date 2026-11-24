@@ -241,6 +241,18 @@ export const api = {
       body: JSON.stringify({ url }),
     }),
 
+  parseRealLink: (payload: {
+    url: string;
+    title?: string;
+    price?: number;
+    originalPrice?: number;
+    coupon?: string;
+  }) =>
+    request<{ offer: Offer; caption: string }>('/api/offers/parse-link', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
   // --- AUTOMATION & MULTI-WHATSAPP ---
   getSettings: () => request<AutomationSettings>('/api/automation/settings'),
 

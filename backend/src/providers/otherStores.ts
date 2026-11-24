@@ -359,7 +359,7 @@ export async function searchOtherStoreOffers(
   niche: NicheId = 'todos'
 ): Promise<{ offers: Offer[]; mode: 'live' | 'demo'; error?: string }> {
   let mlError: string | undefined;
-  // Busca AO VIVO automática no Mercado Livre Brasil
+  // Busca AO VIVO automática no Mercado Livre Brasil (quando credenciais OAuth estiverem no Render)
   if (store === 'mercadolivre') {
     try {
       const liveOffers = await fetchMercadoLivreLive(
@@ -372,39 +372,13 @@ export async function searchOtherStoreOffers(
       }
     } catch (err) {
       mlError = err instanceof Error ? err.message : 'Erro Mercado Livre';
-      console.warn('[MercadoLivreAPI] Fallback para demo:', mlError);
+      console.warn('[MercadoLivreAPI] Sem ofertas ao vivo:', mlError);
     }
   }
 
-  const q = keyword.trim().toLowerCase();
-  let base = DEMO_OTHER_OFFERS.filter((o) => o.store === store).map((o) => {
-    if (store === 'amazon' && credentials.amazonTag) {
-      return {
-        ...o,
-        affiliateUrl: `${o.productUrl}?tag=${encodeURIComponent(credentials.amazonTag)}`,
-      };
-    }
-    if (store === 'mercadolivre' && credentials.mercadoLivreTag) {
-      return {
-        ...o,
-        affiliateUrl: `${o.productUrl}#matt_word=${encodeURIComponent(credentials.mercadoLivreTag)}`,
-      };
-    }
-    return o;
-  });
-
-  if (niche !== 'todos') {
-    base = base.filter((o) => o.niche === niche);
-  }
-  if (q) {
-    base = base.filter(
-      (o) =>
-        o.title.toLowerCase().includes(q) || o.category.toLowerCase().includes(q)
-    );
-  }
-
+  // Sem produtos fictícios! Retorna lista vazia até a API oficial da loja estar configurada.
   return {
-    offers: base,
+    offers: [],
     mode: 'demo',
     error: mlError,
   };
