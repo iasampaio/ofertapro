@@ -265,6 +265,14 @@ export const api = {
       }
     ),
 
+  testAutopilotNow: () =>
+    request<{ success: boolean; offerTitle: string | null; message: string }>(
+      '/api/automation/autopilot/test-now',
+      {
+        method: 'POST',
+      }
+    ),
+
   saveCredentials: (credentials: Partial<AutomationSettings['credentials']>) =>
     request<{ ok: boolean }>('/api/automation/credentials', {
       method: 'PUT',

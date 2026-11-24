@@ -83,6 +83,46 @@ automationRouter.patch('/autopilot/toggle', (req: AuthenticatedRequest, res) => 
   res.json({ ok: true, autopilotEnabled: enabled });
 });
 
+/** POST /api/automation/autopilot/test-now — Dispara 1 rodada do Piloto Automático AGORA (ignora janela 08h–22h para teste) */
+automationRouter.post('/autopilot/test-now', async (req: AuthenticatedRequest, res) => {
+  try {
+    const user = dbStore.getUserById(req.user!.id);
+    if (!user) {
+      res.status(404).json({ error: 'Usuário não encontrado.' });
+      return;
+    }
+    if (user.plan !== 'pro') {
+      res.status(402).json({
+        error: 'Recurso exclusivo PRO 👑.',
+        code: 'PRO_REQUIRED',
+      });
+      return;
+    }
+    if (!user.autopilotConfig) {
+      res.status(400).json({
+        error: 'Clique primeiro em "Configurar Piloto Automático" e salve suas preferências.',
+      });
+      return;
+    }
+
+    const ok = await runContinuousAutopilotForUser(user);
+    const latest = dbStore.listScheduledPosts(user.id).slice(-1)[0];
+
+    res.json({
+      success: ok,
+      offerTitle: latest?.offer?.title || null,
+      message: ok
+        ? `Oferta "${latest?.offer?.title || ''}" postada agora pelo Piloto Automático! Confira seu WhatsApp.`
+        : latest?.errorMessage ||
+          'Não foi possível disparar. Verifique se seu WhatsApp está conectado na aba Canais.',
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: err instanceof Error ? err.message : 'Erro ao testar Piloto Automático',
+    });
+  }
+});
+
 /** PUT /api/automation/credentials */
 automationRouter.put('/credentials', (req: AuthenticatedRequest, res) => {
   const body = req.body as Partial<AffiliateCredentials>;

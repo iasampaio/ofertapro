@@ -76,6 +76,7 @@ export function SearchGeneratorScreen({
   const [autoMinDiscount, setAutoMinDiscount] = useState('5');
   const [autoCount, setAutoCount] = useState('5');
   const [autoLoading, setAutoLoading] = useState(false);
+  const [testingAutopilot, setTestingAutopilot] = useState(false);
 
   async function searchProducts(nichesOverride?: NicheId[]) {
     const activeNiches =
@@ -297,6 +298,26 @@ export function SearchGeneratorScreen({
     }
   }
 
+  async function handleTestAutopilotNow() {
+    if (settings?.plan !== 'pro') {
+      onOpenPro();
+      return;
+    }
+    setTestingAutopilot(true);
+    try {
+      const res = await api.testAutopilotNow();
+      Alert.alert(
+        res.success ? 'Piloto Automático Testado! ✅' : 'Aviso do Teste',
+        res.message
+      );
+      onRefreshSettings();
+    } catch (err: any) {
+      Alert.alert('Erro no Teste', err?.message || 'Não foi possível testar agora.');
+    } finally {
+      setTestingAutopilot(false);
+    }
+  }
+
   function handleOpenAutopilot() {
     if (settings?.plan !== 'pro') {
       Alert.alert(
@@ -431,23 +452,49 @@ export function SearchGeneratorScreen({
         />
       </View>
 
-      <TouchableOpacity
-        activeOpacity={0.8}
-        style={[
-          styles.batchBtn,
-          {
-            backgroundColor:
-              settings?.plan === 'pro' ? colors.secondary : colors.proBg,
-          },
-        ]}
-        onPress={handleOpenAutopilot}
-      >
-        <Text style={styles.batchBtnText}>
-          {settings?.plan === 'pro'
-            ? '⚡ Configurar Piloto Automático (08h–22h)'
-            : '👑 Piloto Automático por Nicho (Exclusivo PRO)'}
-        </Text>
-      </TouchableOpacity>
+      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          style={[
+            styles.batchBtn,
+            {
+              flex: 1,
+              marginBottom: 0,
+              backgroundColor:
+                settings?.plan === 'pro' ? colors.secondary : colors.proBg,
+            },
+          ]}
+          onPress={handleOpenAutopilot}
+        >
+          <Text style={styles.batchBtnText}>
+            {settings?.plan === 'pro'
+              ? '⚡ Configurar Piloto'
+              : '👑 Piloto Automático (PRO)'}
+          </Text>
+        </TouchableOpacity>
+
+        {settings?.plan === 'pro' ? (
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={[
+              styles.batchBtn,
+              {
+                marginBottom: 0,
+                paddingHorizontal: 14,
+                backgroundColor: colors.save,
+              },
+            ]}
+            onPress={handleTestAutopilotNow}
+            disabled={testingAutopilot}
+          >
+            {testingAutopilot ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.batchBtnText}>🧪 Postar Agora</Text>
+            )}
+          </TouchableOpacity>
+        ) : null}
+      </View>
 
       <TouchableOpacity
         activeOpacity={0.8}

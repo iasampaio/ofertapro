@@ -180,6 +180,17 @@ export interface UserRecord {
   createdAt: string;
 }
 
+const DEFAULT_OWNER_EMAILS = ['iasampaio.2014@gmail.com'];
+
+function isOwnerEmail(email: string): boolean {
+  const extra = (process.env.OWNER_EMAILS || '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  const allOwners = new Set([...DEFAULT_OWNER_EMAILS, ...extra]);
+  return allOwners.has(email.trim().toLowerCase());
+}
+
 function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -207,7 +218,7 @@ function mapUserRow(row: Record<string, unknown>): UserRecord {
     name: String(row.name),
     email: String(row.email),
     passwordHash: String(row.password_hash),
-    plan: row.plan === 'pro' ? 'pro' : 'free',
+    plan: row.plan === 'pro' || isOwnerEmail(String(row.email)) ? 'pro' : 'free',
     autopilotEnabled: Number(row.autopilot_enabled) === 1,
     autopilotConfig,
     autopilotLastRun: row.autopilot_last_run ? String(row.autopilot_last_run) : null,
@@ -244,10 +255,11 @@ export const dbStore = {
     const id = uuid();
     const now = new Date().toISOString();
     const today = todayIsoDate();
+    const initialPlan = isOwnerEmail(email) ? 'pro' : 'free';
     db.prepare(
       `INSERT INTO users (id, name, email, password_hash, plan, daily_posts_limit, posts_used_today, last_usage_date, created_at)
-       VALUES (?, ?, ?, ?, 'free', 5, 0, ?, ?)`
-    ).run(id, name.trim(), email.trim().toLowerCase(), passwordHash, today, now);
+       VALUES (?, ?, ?, ?, ?, 5, 0, ?, ?)`
+    ).run(id, name.trim(), email.trim().toLowerCase(), passwordHash, initialPlan, today, now);
 
     return this.getUserById(id)!;
   },
