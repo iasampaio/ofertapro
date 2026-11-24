@@ -14,6 +14,38 @@ offersRouter.get('/niches', (_req, res) => {
   res.json({ niches: NICHES });
 });
 
+/** GET /api/offers/debug-stores — Diagnóstico seguro para ver se Shopee e Mercado Livre estão ao vivo */
+offersRouter.get('/debug-stores', async (_req, res) => {
+  const { searchShopeeOffers } = await import('../providers/shopee');
+  const { searchOtherStoreOffers } = await import('../providers/otherStores');
+
+  const creds = {
+    shopeeAppId: process.env.SHOPEE_APP_ID || '',
+    shopeeAppSecret: process.env.SHOPEE_APP_SECRET || '',
+    mercadoLivreTag: process.env.MERCADOLIVRE_AFFILIATE_TAG || '',
+    amazonTag: process.env.AMAZON_ASSOCIATE_TAG || '',
+    aliexpressKey: process.env.ALIEXPRESS_APP_KEY || '',
+  };
+
+  const [shopeeRes, mlRes] = await Promise.all([
+    searchShopeeOffers('', creds, 'todos', 3),
+    searchOtherStoreOffers('mercadolivre', '', creds, 'todos'),
+  ]);
+
+  res.json({
+    shopee: {
+      hasEnvKeys: Boolean(creds.shopeeAppId && creds.shopeeAppSecret),
+      mode: shopeeRes.mode,
+      error: shopeeRes.error || null,
+      sampleLink: shopeeRes.offers[0]?.affiliateUrl || null,
+    },
+    mercadolivre: {
+      mode: mlRes.mode,
+      sampleLink: mlRes.offers[0]?.affiliateUrl || null,
+    },
+  });
+});
+
 /**
  * GET /api/offers/coupons — Lista cupons ativos na vitrine (NÃO automático: usuário escolhe se posta!)
  */
