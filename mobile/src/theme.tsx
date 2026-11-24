@@ -80,10 +80,11 @@ export const DARK_COLORS: ThemeColors = {
 export const COLORS = LIGHT_COLORS;
 
 export const STORE_META: Record<
-  'shopee' | 'mercadolivre' | 'amazon' | 'aliexpress',
+  'shopee' | 'lomadee' | 'mercadolivre' | 'amazon' | 'aliexpress',
   { label: string; color: string; bg: string }
 > = {
   shopee: { label: 'Shopee', color: '#EA580C', bg: '#FFEDD5' },
+  lomadee: { label: 'Lojas BR', color: '#6D28D9', bg: '#EDE9FE' },
   mercadolivre: { label: 'Mercado Livre', color: '#A16207', bg: '#FEF9C3' },
   amazon: { label: 'Amazon', color: '#1E293B', bg: '#E2E8F0' },
   aliexpress: { label: 'AliExpress', color: '#DC2626', bg: '#FEE2E2' },

@@ -1,5 +1,6 @@
 import { AffiliateCredentials, NicheId, Offer, StoreId } from '../types';
 import { searchShopeeOffers } from './shopee';
+import { searchLomadeeOffers } from './lomadee';
 import { searchOtherStoreOffers } from './otherStores';
 
 export async function searchOffersAcrossStores(
@@ -9,13 +10,19 @@ export async function searchOffersAcrossStores(
   niche: NicheId = 'todos'
 ): Promise<{ offers: Offer[]; liveStores: StoreId[] }> {
   const selected: StoreId[] =
-    stores.length > 0 ? stores : ['shopee', 'mercadolivre', 'amazon', 'aliexpress'];
+    stores.length > 0
+      ? stores
+      : ['shopee', 'lomadee', 'mercadolivre', 'amazon', 'aliexpress'];
 
   const results = await Promise.all(
     selected.map(async (store) => {
       try {
         if (store === 'shopee') {
           const res = await searchShopeeOffers(keyword, credentials, niche);
+          return { store, offers: res.offers, mode: res.mode };
+        }
+        if (store === 'lomadee') {
+          const res = await searchLomadeeOffers(keyword, niche);
           return { store, offers: res.offers, mode: res.mode };
         }
         const res = await searchOtherStoreOffers(store, keyword, credentials, niche);

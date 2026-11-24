@@ -23,6 +23,7 @@ import { STORE_META, useTheme } from '../theme';
 const STORES: Array<{ id: StoreId | 'all'; label: string }> = [
   { id: 'all', label: 'Todas' },
   { id: 'shopee', label: 'Shopee' },
+  { id: 'lomadee', label: 'Lojas BR' },
   { id: 'mercadolivre', label: 'Mercado Livre' },
   { id: 'amazon', label: 'Amazon' },
   { id: 'aliexpress', label: 'AliExpress' },

@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 
-export type StoreId = 'shopee' | 'mercadolivre' | 'amazon' | 'aliexpress';
+export type StoreId = 'shopee' | 'lomadee' | 'mercadolivre' | 'amazon' | 'aliexpress';
 
 export type NicheId =
   | 'todos'

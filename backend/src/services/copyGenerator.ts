@@ -2,6 +2,7 @@ import { CopyTemplate, NicheId, Offer, StoreId } from '../types';
 
 const STORE_LABELS: Record<StoreId, string> = {
   shopee: 'SHOPEE',
+  lomadee: 'LOJA OFICIAL',
   mercadolivre: 'MERCADO LIVRE',
   amazon: 'AMAZON',
   aliexpress: 'ALIEXPRESS',

@@ -14,9 +14,10 @@ offersRouter.get('/niches', (_req, res) => {
   res.json({ niches: NICHES });
 });
 
-/** GET /api/offers/debug-stores — Diagnóstico seguro para ver se Shopee e Mercado Livre estão ao vivo */
+/** GET /api/offers/debug-stores — Diagnóstico seguro para ver se Shopee, Lomadee e Mercado Livre estão ao vivo */
 offersRouter.get('/debug-stores', async (_req, res) => {
   const { searchShopeeOffers } = await import('../providers/shopee');
+  const { searchLomadeeOffers } = await import('../providers/lomadee');
   const { searchOtherStoreOffers } = await import('../providers/otherStores');
 
   const creds = {
@@ -27,8 +28,9 @@ offersRouter.get('/debug-stores', async (_req, res) => {
     aliexpressKey: process.env.ALIEXPRESS_APP_KEY || '',
   };
 
-  const [shopeeRes, mlRes] = await Promise.all([
+  const [shopeeRes, lomadeeRes, mlRes] = await Promise.all([
     searchShopeeOffers('', creds, 'todos', 3),
+    searchLomadeeOffers('', 'todos', 3),
     searchOtherStoreOffers('mercadolivre', '', creds, 'todos'),
   ]);
 
@@ -39,6 +41,12 @@ offersRouter.get('/debug-stores', async (_req, res) => {
       error: shopeeRes.error || null,
       sampleLink: shopeeRes.offers[0]?.affiliateUrl || null,
     },
+    lomadee: {
+      hasEnvKeys: Boolean(process.env.LOMADEE_APP_TOKEN && process.env.LOMADEE_SOURCE_ID),
+      mode: lomadeeRes.mode,
+      error: lomadeeRes.error || null,
+      sampleLink: lomadeeRes.offers[0]?.affiliateUrl || null,
+    },
     mercadolivre: {
       mode: mlRes.mode,
       error: mlRes.error || null,
@@ -48,14 +56,17 @@ offersRouter.get('/debug-stores', async (_req, res) => {
 });
 
 /**
- * GET /api/offers/coupons — Lista cupons ativos na vitrine (NÃO automático: usuário escolhe se posta!)
+ * GET /api/offers/coupons — Lista cupons ativos na vitrine (Lomadee ao vivo + base)
  */
-offersRouter.get('/coupons', (req, res) => {
+offersRouter.get('/coupons', async (req, res) => {
+  const { fetchLomadeeCoupons } = await import('../providers/lomadee');
   const storeParam = String(req.query.store || 'all');
+  const liveCoupons = await fetchLomadeeCoupons();
+  const allCoupons = [...liveCoupons, ...STORE_COUPONS];
   const coupons =
     storeParam && storeParam !== 'all'
-      ? STORE_COUPONS.filter((c) => c.store === storeParam)
-      : STORE_COUPONS;
+      ? allCoupons.filter((c) => c.store === storeParam)
+      : allCoupons;
   res.json({ coupons });
 });
 
@@ -67,7 +78,7 @@ offersRouter.get('/showcase', async (req, res) => {
     const storeParam = String(req.query.stores || '');
     const stores = storeParam
       ? (storeParam.split(',').filter(Boolean) as StoreId[])
-      : (['shopee', 'mercadolivre', 'amazon', 'aliexpress'] as StoreId[]);
+      : (['shopee', 'lomadee', 'mercadolivre', 'amazon', 'aliexpress'] as StoreId[]);
 
     const ownerCredentials = {
       shopeeAppId: process.env.SHOPEE_APP_ID || '',
@@ -104,7 +115,7 @@ offersRouter.get('/search', requireAuth, async (req: AuthenticatedRequest, res) 
     const storeParam = String(req.query.stores || '');
     const stores = storeParam
       ? (storeParam.split(',').filter(Boolean) as StoreId[])
-      : (['shopee', 'mercadolivre', 'amazon', 'aliexpress'] as StoreId[]);
+      : (['shopee', 'lomadee', 'mercadolivre', 'amazon', 'aliexpress'] as StoreId[]);
 
     const result = await searchOffersAcrossStores(keyword, stores, user.credentials, niche);
     res.json({

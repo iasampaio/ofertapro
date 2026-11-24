@@ -353,7 +353,7 @@ async function fetchMercadoLivreLive(
 }
 
 export async function searchOtherStoreOffers(
-  store: Exclude<StoreId, 'shopee'>,
+  store: Exclude<StoreId, 'shopee' | 'lomadee'>,
   keyword: string,
   credentials: AffiliateCredentials,
   niche: NicheId = 'todos'

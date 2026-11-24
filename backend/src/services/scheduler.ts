@@ -87,7 +87,7 @@ export async function runContinuousAutopilotForUser(user: UserRecord): Promise<b
 
   const searchRes = await searchOffersAcrossStores(
     '',
-    ['shopee', 'mercadolivre', 'amazon', 'aliexpress'],
+    ['shopee', 'lomadee', 'mercadolivre', 'amazon', 'aliexpress'],
     user.credentials,
     chosenNiche
   );
