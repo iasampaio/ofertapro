@@ -109,6 +109,11 @@ try {
 } catch {
   // Coluna já existe
 }
+try {
+  db.exec(`ALTER TABLE users ADD COLUMN autopilot_enabled INTEGER NOT NULL DEFAULT 0;`);
+} catch {
+  // Coluna já existe
+}
 
 export const DEFAULT_TEMPLATES: CopyTemplate[] = [
   {
@@ -147,6 +152,7 @@ export interface UserRecord {
   email: string;
   passwordHash: string;
   plan: 'free' | 'pro';
+  autopilotEnabled: boolean;
   dailyPostsLimit: number;
   postsUsedToday: number;
   lastUsageDate: string;
@@ -166,6 +172,7 @@ function mapUserRow(row: Record<string, unknown>): UserRecord {
     email: String(row.email),
     passwordHash: String(row.password_hash),
     plan: row.plan === 'pro' ? 'pro' : 'free',
+    autopilotEnabled: Number(row.autopilot_enabled) === 1,
     dailyPostsLimit: Number(row.daily_posts_limit) || 5,
     postsUsedToday: Number(row.posts_used_today) || 0,
     lastUsageDate: String(row.last_usage_date),
@@ -249,6 +256,13 @@ export const dbStore = {
 
   updatePlan(userId: string, plan: 'free' | 'pro'): void {
     db.prepare('UPDATE users SET plan = ? WHERE id = ?').run(plan, userId);
+  },
+
+  setAutopilotEnabled(userId: string, enabled: boolean): void {
+    db.prepare('UPDATE users SET autopilot_enabled = ? WHERE id = ?').run(
+      enabled ? 1 : 0,
+      userId
+    );
   },
 
   canPublishMore(user: UserRecord): boolean {

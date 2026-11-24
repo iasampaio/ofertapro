@@ -4,7 +4,10 @@ import { AuthenticatedRequest, requireAuth } from '../middleware/authMiddleware'
 import { searchOffersAcrossStores } from '../providers';
 import { renderOfferCaption, renderStatusCaption } from '../services/copyGenerator';
 import { dispatchToChannels, sendWhatsAppStatus } from '../services/dispatcher';
-import { processDueScheduledPosts } from '../services/scheduler';
+import {
+  clampToBusinessHours,
+  processDueScheduledPosts,
+} from '../services/scheduler';
 import {
   isBaileysConnected,
   listBaileysGroups,
@@ -39,6 +42,7 @@ automationRouter.get('/settings', (req: AuthenticatedRequest, res) => {
   res.json({
     user: { id: user.id, name: user.name, email: user.email },
     plan: user.plan,
+    autopilotEnabled: user.autopilotEnabled,
     dailyPostsLimit: user.dailyPostsLimit,
     postsUsedToday: user.postsUsedToday,
     credentials: {
@@ -52,6 +56,28 @@ automationRouter.get('/settings', (req: AuthenticatedRequest, res) => {
     whatsappAccounts,
     channels,
   });
+});
+
+/** PATCH /api/automation/autopilot/toggle — Ativa ou desativa o Piloto Automático (08h às 22h) */
+automationRouter.patch('/autopilot/toggle', (req: AuthenticatedRequest, res) => {
+  const user = dbStore.getUserById(req.user!.id);
+  if (!user) {
+    res.status(404).json({ error: 'Usuário não encontrado.' });
+    return;
+  }
+
+  const enabled = Boolean(req.body.enabled);
+  if (enabled && user.plan !== 'pro') {
+    res.status(402).json({
+      error:
+        'O Piloto Automático (08h às 22h) é exclusivo para assinantes PRO 👑.',
+      code: 'PRO_REQUIRED',
+    });
+    return;
+  }
+
+  dbStore.setAutopilotEnabled(user.id, enabled);
+  res.json({ ok: true, autopilotEnabled: enabled });
 });
 
 /** PUT /api/automation/credentials */
@@ -512,31 +538,40 @@ automationRouter.post('/schedule/batch-by-niche', async (req: AuthenticatedReque
 
     const {
       niche,
+      niches,
       intervalMinutes = 30,
       minDiscount = 0,
       count = 5,
       channelIds,
     } = req.body as {
       niche?: NicheId;
+      niches?: NicheId[];
       intervalMinutes?: number;
       minDiscount?: number;
       count?: number;
       channelIds?: string[];
     };
 
-    const chosenNiche: NicheId = niche || 'todos';
+    const chosenNiches: NicheId[] =
+      Array.isArray(niches) && niches.length > 0
+        ? niches
+        : [niche || 'todos'];
+    const includesAll = chosenNiches.includes('todos');
+
     const userChannels = dbStore.listChannels(user.id).filter((c) => c.enabled);
     const matchingChannels =
       channelIds && channelIds.length > 0
         ? userChannels.filter((c) => channelIds.includes(c.id))
-        : chosenNiche === 'todos'
+        : includesAll
         ? userChannels
-        : userChannels.filter((c) => c.niche === chosenNiche || c.niche === 'todos');
+        : userChannels.filter(
+            (c) => chosenNiches.includes(c.niche) || c.niche === 'todos'
+          );
 
     if (matchingChannels.length === 0) {
       res.status(400).json({
         error:
-          'Nenhum grupo ou Status ativo encontrado para este nicho. Cadastre um destino na aba Canais primeiro.',
+          'Nenhum grupo ou Status ativo encontrado para os nichos escolhidos. Cadastre um destino na aba Canais primeiro.',
       });
       return;
     }
@@ -545,20 +580,33 @@ automationRouter.post('/schedule/batch-by-niche', async (req: AuthenticatedReque
     const safeInterval = Math.max(1, Math.min(1440, Number(intervalMinutes) || 30));
     const maxToSchedule = Math.max(1, Math.min(Number(count) || 5, 20));
 
-    const searchRes = await searchOffersAcrossStores(
-      '',
-      ['shopee', 'mercadolivre', 'amazon', 'aliexpress'],
-      user.credentials,
-      chosenNiche
+    // Busca ofertas em todos os nichos escolhidos e remove duplicadas
+    const nichesToQuery: NicheId[] = includesAll ? ['todos'] : chosenNiches;
+    const allResults = await Promise.all(
+      nichesToQuery.map((n) =>
+        searchOffersAcrossStores(
+          '',
+          ['shopee', 'mercadolivre', 'amazon', 'aliexpress'],
+          user.credentials,
+          n
+        )
+      )
     );
 
-    const filteredOffers = searchRes.offers.filter(
-      (o) => o.discountPercent >= safeMinDiscount
-    );
+    const uniqueMap = new Map<string, Offer>();
+    for (const r of allResults) {
+      for (const o of r.offers) {
+        uniqueMap.set(o.id, o);
+      }
+    }
+
+    const filteredOffers = Array.from(uniqueMap.values())
+      .filter((o) => o.discountPercent >= safeMinDiscount)
+      .sort((a, b) => b.discountPercent - a.discountPercent);
 
     if (filteredOffers.length === 0) {
       res.status(400).json({
-        error: `Nenhuma oferta encontrada neste nicho com desconto mínimo de ${safeMinDiscount}% OFF. Tente baixar um pouco o desconto mínimo.`,
+        error: `Nenhuma oferta encontrada nesses nichos com desconto mínimo de ${safeMinDiscount}% OFF. Tente baixar um pouco o desconto mínimo.`,
       });
       return;
     }
@@ -567,10 +615,12 @@ automationRouter.post('/schedule/batch-by-niche', async (req: AuthenticatedReque
     const template =
       DEFAULT_TEMPLATES.find((t) => t.id === user.activeTemplateId) || DEFAULT_TEMPLATES[0];
 
+    // Ativa o Piloto Automático automaticamente ao confirmar a configuração
+    dbStore.setAutopilotEnabled(user.id, true);
+
     const created = offers.map((offer, idx) => {
-      const scheduledFor = new Date(
-        Date.now() + (idx + 1) * safeInterval * 60 * 1000
-      ).toISOString();
+      const rawDate = new Date(Date.now() + (idx + 1) * safeInterval * 60 * 1000);
+      const scheduledFor = clampToBusinessHours(rawDate).toISOString();
       return dbStore.addScheduledPost(user.id, {
         offer,
         caption: renderOfferCaption(offer, template),
@@ -582,6 +632,7 @@ automationRouter.post('/schedule/batch-by-niche', async (req: AuthenticatedReque
     res.status(201).json({
       scheduledCount: created.length,
       channelsCount: matchingChannels.length,
+      nichesCount: chosenNiches.length,
       intervalMinutes: safeInterval,
       minDiscount: safeMinDiscount,
       posts: created,
@@ -601,6 +652,6 @@ automationRouter.delete('/schedule/:id', (req: AuthenticatedRequest, res) => {
 
 /** POST /api/automation/schedule/run-now */
 automationRouter.post('/schedule/run-now', async (_req, res) => {
-  const count = await processDueScheduledPosts();
+  const count = await processDueScheduledPosts(true);
   res.json({ processed: count });
 });

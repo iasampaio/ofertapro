@@ -218,12 +218,113 @@ export const STORE_COUPONS: StoreCoupon[] = [
   },
 ];
 
+const ML_NICHE_QUERIES: Record<NicheId, string> = {
+  todos: 'oferta do dia',
+  eletronicos: 'fone bluetooth smartwatch caixa de som',
+  casa_cozinha: 'air fryer aspirador panela cozinha',
+  moda_beleza: 'perfume skincare secador cabelo',
+  maternidade_bebe: 'fralda mochila maternidade bebe',
+  fitness_saude: 'whey protein creatina academia',
+  pets: 'racao cama bebedouro pet cachorro',
+  gamer_info: 'teclado mecanico mouse gamer headset',
+  ferramentas_auto: 'furadeira parafusadeira maleta ferramentas',
+};
+
+interface MLSearchItem {
+  id: string;
+  title: string;
+  price: number;
+  original_price?: number | null;
+  thumbnail: string;
+  permalink: string;
+  seller?: { nickname?: string };
+  sold_quantity?: number;
+}
+
+async function fetchMercadoLivreLive(
+  keyword: string,
+  niche: NicheId,
+  affiliateTag: string
+): Promise<Offer[]> {
+  const q = keyword.trim() || ML_NICHE_QUERIES[niche] || 'oferta';
+  const url = `https://api.mercadolibre.com/sites/MLB/search?q=${encodeURIComponent(
+    q
+  )}&limit=12`;
+
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+      Accept: 'application/json',
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Mercado Livre HTTP ${res.status}`);
+  }
+
+  const json = (await res.json()) as { results?: MLSearchItem[] };
+  const items = json.results || [];
+
+  return items
+    .filter((item) => item.price > 0)
+    .map((item) => {
+      const original =
+        item.original_price && item.original_price > item.price
+          ? item.original_price
+          : undefined;
+      const discount = original
+        ? Math.round(((original - item.price) / original) * 100)
+        : 0;
+      const highResImg = (item.thumbnail || '')
+        .replace(/^http:\/\//, 'https://')
+        .replace(/-I\.jpg$/, '-O.jpg');
+
+      const affiliateUrl = affiliateTag
+        ? `${item.permalink}#matt_word=${encodeURIComponent(affiliateTag)}`
+        : item.permalink;
+
+      return {
+        id: `ml-${item.id}`,
+        store: 'mercadolivre' as const,
+        title: item.title,
+        price: item.price,
+        originalPrice: original,
+        discountPercent: discount,
+        commissionRate: 8,
+        imageUrl: highResImg,
+        productUrl: item.permalink,
+        affiliateUrl,
+        sales: item.sold_quantity,
+        shopName: item.seller?.nickname || 'Mercado Livre',
+        category: 'Mercado Livre',
+        niche,
+      };
+    });
+}
+
 export async function searchOtherStoreOffers(
   store: Exclude<StoreId, 'shopee'>,
   keyword: string,
   credentials: AffiliateCredentials,
   niche: NicheId = 'todos'
 ): Promise<{ offers: Offer[]; mode: 'live' | 'demo' }> {
+  // Busca AO VIVO automática no Mercado Livre Brasil
+  if (store === 'mercadolivre') {
+    try {
+      const liveOffers = await fetchMercadoLivreLive(
+        keyword,
+        niche,
+        credentials.mercadoLivreTag || process.env.MERCADOLIVRE_AFFILIATE_TAG || ''
+      );
+      if (liveOffers.length > 0) {
+        return { offers: liveOffers, mode: 'live' };
+      }
+    } catch (err) {
+      console.warn('[MercadoLivreAPI] Fallback para demo:', err);
+    }
+  }
+
   const q = keyword.trim().toLowerCase();
   let base = DEMO_OTHER_OFFERS.filter((o) => o.store === store).map((o) => {
     if (store === 'amazon' && credentials.amazonTag) {

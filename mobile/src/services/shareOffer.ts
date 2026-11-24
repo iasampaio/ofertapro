@@ -1,9 +1,11 @@
 import { Alert, Share } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import * as Sharing from 'expo-sharing';
+import { File, Paths } from 'expo-file-system';
 
 /**
- * Compartilha a FOTO real da oferta + copia a legenda persuasiva para colar no WhatsApp/Status/Instagram.
- * Requer `expo-file-system` e `expo-sharing` (instalados via `npx expo install expo-file-system expo-sharing`).
+ * Baixa a FOTO real da oferta usando a API oficial do Expo SDK 58 (`expo-file-system`),
+ * copia a legenda persuasiva para a área de transferência e abre o compartilhamento com a IMAGEM anexada.
  */
 export async function shareOfferWithPhoto(
   imageUrl: string,
@@ -11,36 +13,36 @@ export async function shareOfferWithPhoto(
 ): Promise<void> {
   await Clipboard.setStringAsync(caption);
 
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const FileSystem = require('expo-file-system');
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const Sharing = require('expo-sharing');
+  if (imageUrl) {
+    try {
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        const destFile = new File(Paths.cache, `ofertapro_${Date.now()}.jpg`);
+        const downloaded = await File.downloadFileAsync(imageUrl, destFile, {
+          idempotent: true,
+        });
 
-    const canShare = await Sharing.isAvailableAsync();
-    if (canShare && imageUrl) {
-      const localPath = `${FileSystem.cacheDirectory}ofertapro_${Date.now()}.jpg`;
-      const download = await FileSystem.downloadAsync(imageUrl, localPath);
-
-      Alert.alert(
-        'Legenda copiada! 📋',
-        'A foto do produto vai abrir para você escolher o grupo ou Status — depois é só tocar em "Colar" na legenda!',
-        [
-          {
-            text: 'Compartilhar Foto Agora',
-            onPress: async () => {
-              await Sharing.shareAsync(download.uri, {
-                mimeType: 'image/jpeg',
-                dialogTitle: 'Compartilhar Oferta com Foto',
-              });
+        Alert.alert(
+          'Legenda copiada! 📋',
+          'A foto da oferta vai abrir agora — escolha o grupo ou Status no WhatsApp e toque em "Colar" na legenda!',
+          [
+            {
+              text: 'Compartilhar Foto 📸',
+              onPress: async () => {
+                await Sharing.shareAsync(downloaded.uri, {
+                  mimeType: 'image/jpeg',
+                  UTI: 'public.jpeg',
+                  dialogTitle: 'Compartilhar Oferta com Foto',
+                });
+              },
             },
-          },
-        ]
-      );
-      return;
+          ]
+        );
+        return;
+      }
+    } catch (err) {
+      console.warn('[shareOfferWithPhoto] Erro ao baixar foto:', err);
     }
-  } catch {
-    // Fallback caso expo-file-system / expo-sharing ainda não tenham sido instalados
   }
 
   await Share.share({ message: caption });

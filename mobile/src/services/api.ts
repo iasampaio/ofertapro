@@ -114,6 +114,7 @@ export interface AuthUser {
 export interface AutomationSettings {
   user?: AuthUser;
   plan: 'free' | 'pro';
+  autopilotEnabled: boolean;
   dailyPostsLimit: number;
   postsUsedToday: number;
   credentials: {
@@ -233,6 +234,15 @@ export const api = {
   // --- AUTOMATION & MULTI-WHATSAPP ---
   getSettings: () => request<AutomationSettings>('/api/automation/settings'),
 
+  toggleAutopilot: (enabled: boolean) =>
+    request<{ ok: boolean; autopilotEnabled: boolean }>(
+      '/api/automation/autopilot/toggle',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled }),
+      }
+    ),
+
   saveCredentials: (credentials: Partial<AutomationSettings['credentials']>) =>
     request<{ ok: boolean }>('/api/automation/credentials', {
       method: 'PUT',
@@ -336,7 +346,7 @@ export const api = {
     }),
 
   scheduleBatchByNiche: (
-    niche: NicheId,
+    niches: NicheId[],
     intervalMinutes = 30,
     minDiscount = 30,
     count = 5
@@ -344,11 +354,12 @@ export const api = {
     request<{
       scheduledCount: number;
       channelsCount: number;
+      nichesCount: number;
       intervalMinutes: number;
       minDiscount: number;
     }>('/api/automation/schedule/batch-by-niche', {
       method: 'POST',
-      body: JSON.stringify({ niche, intervalMinutes, minDiscount, count }),
+      body: JSON.stringify({ niches, intervalMinutes, minDiscount, count }),
     }),
 
   deleteScheduledPost: (id: string) =>

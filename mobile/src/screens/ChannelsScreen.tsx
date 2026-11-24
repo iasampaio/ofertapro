@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import { SelectDropdown } from '../components/SelectModal';
 import {
   api,
   AutomationSettings,
@@ -59,14 +60,18 @@ export function ChannelsScreen({
 
   const [channelType, setChannelType] = useState<ChannelType>('whatsapp_group');
   const [channelName, setChannelName] = useState('');
-  const [channelNiche, setChannelNiche] = useState<NicheId>('todos');
-  const [selectedWaId, setSelectedWaId] = useState<string>('');
+  const [channelNiches, setChannelNiches] = useState<NicheId[]>(['todos']);
+  const [selectedWaIds, setSelectedWaIds] = useState<string[]>([]);
   const [targetId, setTargetId] = useState('');
   const [telegramToken, setTelegramToken] = useState('');
   const [loadingGroups, setLoadingGroups] = useState(false);
   const [fetchedGroups, setFetchedGroups] = useState<
     Array<{ id: string; name: string; participantsCount: number }>
   >([]);
+  const [showSavedGroups, setShowSavedGroups] = useState(false);
+
+  const primaryWaId = selectedWaIds[0] || settings?.whatsappAccounts[0]?.id || '';
+  const primaryNiche: NicheId = channelNiches[0] || 'todos';
 
   useEffect(() => {
     if (settings) {
@@ -74,11 +79,18 @@ export function ChannelsScreen({
       setShopeeAppSecret(settings.credentials.shopeeAppSecret || '');
       setAmazonTag(settings.credentials.amazonTag || '');
       setMlTag(settings.credentials.mercadoLivreTag || '');
-      if (!selectedWaId && settings.whatsappAccounts.length > 0) {
-        setSelectedWaId(settings.whatsappAccounts[0].id);
+      if (selectedWaIds.length === 0 && settings.whatsappAccounts.length > 0) {
+        setSelectedWaIds([settings.whatsappAccounts[0].id]);
       }
     }
   }, [settings]);
+
+  // Busca os grupos do WhatsApp AUTOMATICAMENTE sempre que um WhatsApp estiver selecionado
+  useEffect(() => {
+    if (channelType === 'whatsapp_group' && primaryWaId) {
+      handleFetchWhatsAppGroups(true);
+    }
+  }, [primaryWaId, channelType, settings?.whatsappAccounts.length]);
 
   async function handlePairByPhone() {
     if (!waPhone.trim()) {
@@ -100,7 +112,9 @@ export function ChannelsScreen({
       });
       setWaLabel('');
       setWaPhone('');
-      setSelectedWaId(res.account.id);
+      setSelectedWaIds((prev) =>
+        prev.includes(res.account.id) ? prev : [...prev, res.account.id]
+      );
       onRefreshSettings();
     } catch (err: any) {
       if (err?.code === 'PRO_REQUIRED') {
@@ -136,7 +150,9 @@ export function ChannelsScreen({
       setWaApiUrl('');
       setWaToken('');
       setWaInstance('');
-      setSelectedWaId(created.id);
+      setSelectedWaIds((prev) =>
+        prev.includes(created.id) ? prev : [...prev, created.id]
+      );
       onRefreshSettings();
       Alert.alert(
         'WhatsApp conectado! 📱',
@@ -169,13 +185,15 @@ export function ChannelsScreen({
     }
   }
 
-  async function handleFetchWhatsAppGroups() {
-    const accountId = selectedWaId || settings?.whatsappAccounts[0]?.id;
+  async function handleFetchWhatsAppGroups(silent = false) {
+    const accountId = primaryWaId;
     if (!accountId) {
-      Alert.alert(
-        'Conecte um WhatsApp primeiro',
-        'Conecte pelo menos 1 número acima para buscar seus grupos automaticamente.'
-      );
+      if (!silent) {
+        Alert.alert(
+          'Conecte um WhatsApp primeiro',
+          'Conecte pelo menos 1 número acima para buscar seus grupos automaticamente.'
+        );
+      }
       return;
     }
 
@@ -183,35 +201,40 @@ export function ChannelsScreen({
     try {
       const res = await api.getWhatsAppGroups(accountId);
       setFetchedGroups(res.groups);
-      if (res.groups.length === 0) {
+      if (!silent && res.groups.length === 0) {
         Alert.alert(
-          'Nenhum grupo encontrado',
+          'Nenhum grupo encontrado ainda',
           res.connected
             ? 'Este WhatsApp ainda não participa de nenhum grupo.'
-            : 'Este WhatsApp ainda está sincronizando ou não foi pareado. Aguarde alguns segundos e tente de novo.'
+            : 'Este WhatsApp ainda está sincronizando ou precisa ser pareado com o código de 8 dígitos acima. Tente novamente em alguns segundos.'
         );
       }
     } catch (err: any) {
-      Alert.alert('Erro', err?.message || 'Não foi possível buscar os grupos.');
+      if (!silent) {
+        Alert.alert('Erro', err?.message || 'Não foi possível buscar os grupos.');
+      }
     } finally {
       setLoadingGroups(false);
     }
   }
 
   async function handleQuickAddGroup(group: { id: string; name: string }) {
-    const accountId = selectedWaId || settings?.whatsappAccounts[0]?.id;
+    const waIds = selectedWaIds.length > 0 ? selectedWaIds : primaryWaId ? [primaryWaId] : [];
+    const nichesToSave: NicheId[] = channelNiches.length > 0 ? channelNiches : ['todos'];
     try {
-      await api.addChannel({
-        name: group.name,
-        type: 'whatsapp_group',
-        niche: channelNiche,
-        whatsappAccountId: accountId,
-        targetId: group.id,
-      });
+      for (const niche of nichesToSave) {
+        await api.addChannel({
+          name: nichesToSave.length > 1 ? `${group.name} (${getNicheLabel(niche)})` : group.name,
+          type: 'whatsapp_group',
+          niche,
+          whatsappAccountId: waIds[0],
+          targetId: group.id,
+        });
+      }
       onRefreshSettings();
       Alert.alert(
-        'Grupo adicionado! ✅',
-        `"${group.name}" salvo no nicho ${getNicheLabel(channelNiche)}.`
+        'Grupo salvo! ✅',
+        `"${group.name}" vinculado a ${nichesToSave.length} nicho(s).`
       );
     } catch (err: any) {
       if (err?.code === 'PRO_REQUIRED') {
@@ -249,11 +272,9 @@ export function ChannelsScreen({
       await api.addChannel({
         name: channelName.trim(),
         type: channelType,
-        niche: channelNiche,
+        niche: primaryNiche,
         whatsappAccountId:
-          channelType === 'whatsapp_group' || isStatus
-            ? selectedWaId || settings?.whatsappAccounts[0]?.id
-            : undefined,
+          channelType === 'whatsapp_group' || isStatus ? primaryWaId : undefined,
         targetId: effectiveTarget,
         token: channelType === 'telegram' ? telegramToken.trim() || undefined : undefined,
       });
@@ -539,240 +560,225 @@ export function ChannelsScreen({
         {(channelType === 'whatsapp_group' || channelType === 'whatsapp_status') &&
         settings &&
         settings.whatsappAccounts.length > 0 ? (
-          <>
-            <Text style={[styles.label, { color: colors.textMuted }]}>
-              Qual WhatsApp vai postar?
-            </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={{ marginBottom: 10 }}
-            >
-              {settings.whatsappAccounts.map((acc) => {
-                const active = selectedWaId === acc.id;
-                return (
-                  <TouchableOpacity
-                    key={acc.id}
-                    style={[
-                      styles.nicheChip,
-                      {
-                        backgroundColor: active ? colors.primary : colors.inputBg,
-                        borderColor: active ? colors.primary : colors.border,
-                      },
-                    ]}
-                    onPress={() => setSelectedWaId(acc.id)}
-                  >
-                    <Text
-                      style={[
-                        styles.nicheChipText,
-                        { color: active ? '#FFFFFF' : colors.text },
-                      ]}
-                    >
-                      📱 {acc.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </>
+          <SelectDropdown
+            title="📱 Quais WhatsApps vão postar? (pode marcar vários)"
+            placeholder="Selecione 1 ou mais WhatsApps..."
+            multiSelect
+            options={settings.whatsappAccounts.map((acc) => ({
+              id: acc.id,
+              label: `📱 ${acc.label}`,
+              subtitle: acc.phoneNumber,
+            }))}
+            selectedIds={selectedWaIds}
+            onChange={(ids) => {
+              if (ids.length > 0) setSelectedWaIds(ids);
+            }}
+          />
         ) : null}
 
-        <Text style={[styles.label, { color: colors.textMuted }]}>Nicho:</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ marginBottom: 10 }}
-        >
-          {NICHES.map((n) => {
-            const active = channelNiche === n.id;
-            return (
-              <TouchableOpacity
-                key={n.id}
-                style={[
-                  styles.nicheChip,
-                  {
-                    backgroundColor: active ? colors.primary : colors.inputBg,
-                    borderColor: active ? colors.primary : colors.border,
-                  },
-                ]}
-                onPress={() => setChannelNiche(n.id)}
-              >
-                <Text
-                  style={[
-                    styles.nicheChipText,
-                    { color: active ? '#FFFFFF' : colors.text },
-                  ]}
-                >
-                  {n.icon} {n.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+        <SelectDropdown
+          title="🎯 Nichos deste destino (pode marcar vários)"
+          placeholder="Todos os Nichos"
+          multiSelect
+          options={NICHES.map((n) => ({
+            id: n.id,
+            label: `${n.icon} ${n.label}`,
+          }))}
+          selectedIds={channelNiches}
+          onChange={(ids) => {
+            setChannelNiches(ids.length > 0 ? (ids as NicheId[]) : ['todos']);
+          }}
+        />
 
         {channelType === 'whatsapp_group' ? (
-          <View style={{ marginBottom: 12 }}>
+          <View style={{ marginBottom: 4 }}>
             <TouchableOpacity
               style={[
                 styles.saveBtn,
-                { backgroundColor: colors.primary, marginBottom: 8 },
+                { backgroundColor: colors.primary, marginBottom: 10 },
               ]}
-              onPress={handleFetchWhatsAppGroups}
+              onPress={() => handleFetchWhatsAppGroups(false)}
               disabled={loadingGroups}
             >
               {loadingGroups ? (
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
                 <Text style={styles.primaryBtnText}>
-                  🔍 Buscar Meus Grupos do WhatsApp Automaticamente
+                  🔄 Atualizar Meus Grupos do WhatsApp
                 </Text>
               )}
             </TouchableOpacity>
 
             {fetchedGroups.length > 0 ? (
-              <View
-                style={{
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  borderRadius: 10,
-                  padding: 8,
-                  backgroundColor: colors.inputBg,
+              <SelectDropdown
+                title={`👥 Escolher Grupo do WhatsApp (${fetchedGroups.length} encontrados)`}
+                placeholder="Toque para abrir a lista e salvar um grupo..."
+                options={fetchedGroups.map((g) => ({
+                  id: g.id,
+                  label: `👥 ${g.name}`,
+                  subtitle: `${g.participantsCount} participantes`,
+                  badge: settings?.channels.some((c) => c.targetId === g.id)
+                    ? '✅ Salvo'
+                    : '+ Salvar',
+                }))}
+                selectedIds={[]}
+                onChange={(ids) => {
+                  const chosen = fetchedGroups.find((g) => g.id === ids[0]);
+                  if (chosen) handleQuickAddGroup(chosen);
                 }}
-              >
-                <Text style={[styles.label, { color: colors.primaryDark }]}>
-                  Toque em "+ Salvar" nos grupos que deseja adicionar ao nicho{' '}
-                  {getNicheLabel(channelNiche)}:
-                </Text>
-                {fetchedGroups.map((g) => (
-                  <View
-                    key={g.id}
-                    style={[
-                      styles.waRow,
-                      { borderBottomColor: colors.border },
-                    ]}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.channelName, { color: colors.text }]}>
-                        👥 {g.name}
-                      </Text>
-                      <Text style={[styles.channelIdSmall, { color: colors.textMuted }]}>
-                        {g.participantsCount} participantes
-                      </Text>
-                    </View>
-                    <TouchableOpacity
-                      style={{
-                        backgroundColor: colors.save,
-                        paddingHorizontal: 12,
-                        paddingVertical: 6,
-                        borderRadius: 8,
-                      }}
-                      onPress={() => handleQuickAddGroup(g)}
-                    >
-                      <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 12 }}>
-                        + Salvar
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            ) : null}
+              />
+            ) : (
+              <Text style={[styles.helperText, { color: colors.textMuted }]}>
+                {loadingGroups
+                  ? 'Buscando seus grupos automaticamente...'
+                  : 'Conecte seu WhatsApp acima e toque em "Atualizar Meus Grupos" para abrir a lista automaticamente.'}
+              </Text>
+            )}
           </View>
-        ) : null}
-
-        <TextInput
-          style={[styles.input, inputThemeStyle]}
-          placeholderTextColor={colors.textMuted}
-          value={channelName}
-          onChangeText={setChannelName}
-          placeholder={
-            channelType === 'whatsapp_status'
-              ? 'Nome (Ex: Meu Status Ofertas #1)'
-              : 'Ou digite manualmente o nome do grupo'
-          }
-        />
-        {channelType !== 'whatsapp_status' ? (
-          <TextInput
-            style={[styles.input, inputThemeStyle]}
-            placeholderTextColor={colors.textMuted}
-            value={targetId}
-            onChangeText={setTargetId}
-            placeholder={
-              channelType === 'telegram'
-                ? 'Chat ID (-100...) ou @seucanal'
-                : 'ID do Grupo WhatsApp (Ex: 120363042...@g.us)'
-            }
-            autoCapitalize="none"
-          />
-        ) : null}
-        {channelType === 'telegram' ? (
-          <TextInput
-            style={[styles.input, inputThemeStyle]}
-            placeholderTextColor={colors.textMuted}
-            value={telegramToken}
-            onChangeText={setTelegramToken}
-            placeholder="Token do Bot (@BotFather)"
-            autoCapitalize="none"
-          />
-        ) : null}
-
-        <TouchableOpacity
-          style={[styles.saveBtn, { backgroundColor: colors.save }]}
-          onPress={handleAddChannel}
-        >
-          <Text style={styles.primaryBtnText}>✅ Salvar Grupo / Status no Nicho</Text>
-        </TouchableOpacity>
+        ) : channelType === 'whatsapp_status' ? (
+          <View>
+            <Text style={[styles.helperText, { color: colors.textMuted }]}>
+              Ative a postagem automática no Status dos WhatsApps selecionados ({selectedWaIds.length}) para {channelNiches.length} nicho(s).
+            </Text>
+            <TouchableOpacity
+              style={[styles.saveBtn, { backgroundColor: colors.save }]}
+              onPress={async () => {
+                const chosenAccounts = (settings?.whatsappAccounts || []).filter((a) =>
+                  selectedWaIds.includes(a.id)
+                );
+                if (chosenAccounts.length === 0) {
+                  Alert.alert('Conecte um WhatsApp', 'Conecte e selecione pelo menos 1 número acima.');
+                  return;
+                }
+                try {
+                  for (const acc of chosenAccounts) {
+                    await api.addChannel({
+                      name: `Status — ${acc.label}`,
+                      type: 'whatsapp_status',
+                      niche: primaryNiche,
+                      whatsappAccountId: acc.id,
+                      targetId: 'status@broadcast',
+                    });
+                  }
+                  onRefreshSettings();
+                  Alert.alert(
+                    'Status ativado! 🟢',
+                    `Ativado para ${chosenAccounts.length} WhatsApp(s)!`
+                  );
+                } catch (err: any) {
+                  Alert.alert('Aviso', err?.message || 'Não foi possível ativar o Status.');
+                }
+              }}
+            >
+              <Text style={styles.primaryBtnText}>
+                ✅ Ativar Status dos WhatsApps Selecionados
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View>
+            <TextInput
+              style={[styles.input, inputThemeStyle]}
+              placeholderTextColor={colors.textMuted}
+              value={channelName}
+              onChangeText={setChannelName}
+              placeholder="Nome do canal Telegram (Ex: Ofertas VIP)"
+            />
+            <TextInput
+              style={[styles.input, inputThemeStyle]}
+              placeholderTextColor={colors.textMuted}
+              value={targetId}
+              onChangeText={setTargetId}
+              placeholder="Chat ID (-100...) ou @seucanal"
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={[styles.input, inputThemeStyle]}
+              placeholderTextColor={colors.textMuted}
+              value={telegramToken}
+              onChangeText={setTelegramToken}
+              placeholder="Token do Bot (@BotFather)"
+              autoCapitalize="none"
+            />
+            <TouchableOpacity
+              style={[styles.saveBtn, { backgroundColor: colors.save }]}
+              onPress={handleAddChannel}
+            >
+              <Text style={styles.primaryBtnText}>✅ Salvar Canal Telegram</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
-      {/* 3. LISTA DE GRUPOS */}
+      {/* 3. LISTA DE GRUPOS (RECOLHÍVEL PARA NÃO POLUIR A TELA) */}
       <View
         style={[
           styles.section,
           { backgroundColor: colors.card, borderColor: colors.border },
         ]}
       >
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          📋 Grupos e Status Cadastrados ({settings?.channels.length || 0})
-        </Text>
-        {settings?.channels.length ? (
-          settings.channels.map((c) => (
-            <View
-              key={c.id}
-              style={[styles.channelRow, { borderBottomColor: colors.border }]}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.channelName, { color: colors.text }]}>
-                  {c.name}
-                </Text>
-                <Text style={[styles.channelMeta, { color: colors.primaryDark }]}>
-                  {getNicheLabel(c.niche)}{' '}
-                  {c.whatsappAccountId ? `• ${getWhatsAppLabel(c.whatsappAccountId)}` : ''}
-                </Text>
-                <Text style={[styles.channelIdSmall, { color: colors.textMuted }]}>
-                  {c.targetId}
-                </Text>
-              </View>
-              <Switch
-                value={c.enabled}
-                onValueChange={async (val) => {
-                  await api.toggleChannel(c.id, val);
-                  onRefreshSettings();
-                }}
-              />
-              <TouchableOpacity
-                onPress={async () => {
-                  await api.deleteChannel(c.id);
-                  onRefreshSettings();
-                }}
-              >
-                <Text style={[styles.deleteText, { color: colors.danger }]}>Excluir</Text>
-              </TouchableOpacity>
-            </View>
-          ))
-        ) : (
-          <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-            Nenhum grupo cadastrado ainda.
+        <TouchableOpacity
+          activeOpacity={0.75}
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+          onPress={() => setShowSavedGroups((v) => !v)}
+        >
+          <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>
+            📋 Grupos e Status Salvos ({settings?.channels.length || 0})
           </Text>
-        )}
+          <Text style={{ color: colors.primary, fontWeight: '800', fontSize: 16 }}>
+            {showSavedGroups ? '▴' : '▾'}
+          </Text>
+        </TouchableOpacity>
+
+        {showSavedGroups ? (
+          <View style={{ marginTop: 10 }}>
+            {settings?.channels.length ? (
+              settings.channels.map((c) => (
+                <View
+                  key={c.id}
+                  style={[styles.channelRow, { borderBottomColor: colors.border }]}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.channelName, { color: colors.text }]}>
+                      {c.name}
+                    </Text>
+                    <Text style={[styles.channelMeta, { color: colors.primaryDark }]}>
+                      {getNicheLabel(c.niche)}{' '}
+                      {c.whatsappAccountId
+                        ? `• ${getWhatsAppLabel(c.whatsappAccountId)}`
+                        : ''}
+                    </Text>
+                  </View>
+                  <Switch
+                    value={c.enabled}
+                    onValueChange={async (val) => {
+                      await api.toggleChannel(c.id, val);
+                      onRefreshSettings();
+                    }}
+                  />
+                  <TouchableOpacity
+                    onPress={async () => {
+                      await api.deleteChannel(c.id);
+                      onRefreshSettings();
+                    }}
+                  >
+                    <Text style={[styles.deleteText, { color: colors.danger }]}>
+                      Excluir
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ))
+            ) : (
+              <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+                Nenhum grupo cadastrado ainda.
+              </Text>
+            )}
+          </View>
+        ) : null}
       </View>
 
       {/* 4. CREDENCIAIS SHOPEE E OUTRAS LOJAS */}

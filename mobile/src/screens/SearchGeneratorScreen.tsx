@@ -8,6 +8,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -16,6 +17,7 @@ import {
 } from 'react-native';
 import { OfferCard } from '../components/OfferCard';
 import { ProBanner } from '../components/ProBadge';
+import { SelectDropdown } from '../components/SelectModal';
 import {
   api,
   AutomationSettings,
@@ -44,7 +46,7 @@ export function SearchGeneratorScreen({
   const isCompact = width < 360;
 
   const [query, setQuery] = useState('');
-  const [selectedNiche, setSelectedNiche] = useState<NicheId>('todos');
+  const [selectedNiches, setSelectedNiches] = useState<NicheId[]>(['todos']);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -59,17 +61,34 @@ export function SearchGeneratorScreen({
 
   // Modal de configuração do Piloto Automático (PRO)
   const [autopilotOpen, setAutopilotOpen] = useState(false);
+  const [autoNiches, setAutoNiches] = useState<NicheId[]>(['todos']);
+  const [autoWaIds, setAutoWaIds] = useState<string[]>([]);
   const [autoInterval, setAutoInterval] = useState('30');
   const [autoMinDiscount, setAutoMinDiscount] = useState('30');
   const [autoCount, setAutoCount] = useState('5');
   const [autoLoading, setAutoLoading] = useState(false);
 
-  async function searchProducts(nicheOverride?: NicheId) {
-    const activeNiche = nicheOverride ?? selectedNiche;
+  async function searchProducts(nichesOverride?: NicheId[]) {
+    const activeNiches =
+      nichesOverride && nichesOverride.length > 0 ? nichesOverride : selectedNiches;
+    const effective = activeNiches.length > 0 ? activeNiches : (['todos'] as NicheId[]);
     setLoading(true);
     try {
-      const res = await api.searchOffers(query, [], activeNiche);
-      setOffers(res.offers);
+      const toQuery: NicheId[] = effective.includes('todos') ? ['todos'] : effective;
+      const results = await Promise.all(
+        toQuery.map((n) => api.searchOffers(query, [], n))
+      );
+      const unique = new Map<string, Offer>();
+      for (const r of results) {
+        for (const o of r.offers) {
+          unique.set(o.id, o);
+        }
+      }
+      setOffers(
+        Array.from(unique.values()).sort(
+          (a, b) => b.discountPercent - a.discountPercent
+        )
+      );
     } catch (err) {
       Alert.alert(
         'Erro na busca',
@@ -81,8 +100,8 @@ export function SearchGeneratorScreen({
   }
 
   useEffect(() => {
-    searchProducts(selectedNiche);
-  }, [selectedNiche]);
+    searchProducts(selectedNiches);
+  }, [selectedNiches]);
 
   async function openComposer(offer: Offer) {
     setSelectedOffer(offer);
@@ -90,12 +109,11 @@ export function SearchGeneratorScreen({
     setCaption('Gerando copy persuasiva...');
 
     const activeChannels = (settings?.channels || []).filter((c) => c.enabled);
-    const matching =
-      selectedNiche === 'todos'
-        ? activeChannels
-        : activeChannels.filter(
-            (c) => c.niche === selectedNiche || c.niche === 'todos'
-          );
+    const matching = selectedNiches.includes('todos')
+      ? activeChannels
+      : activeChannels.filter(
+          (c) => selectedNiches.includes(c.niche) || c.niche === 'todos'
+        );
     setSelectedChannelIds(matching.map((c) => c.id));
     setSelectedWaAccountIds((settings?.whatsappAccounts || []).map((a) => a.id));
 
@@ -137,7 +155,7 @@ export function SearchGeneratorScreen({
           selectedOffer,
           caption,
           selectedChannelIds,
-          selectedNiche
+          selectedNiches[0] || 'todos'
         );
         messages.push(
           ...res.results.map(
@@ -194,7 +212,7 @@ export function SearchGeneratorScreen({
         caption,
         scheduledFor,
         selectedChannelIds,
-        selectedNiche
+        selectedNiches[0] || 'todos'
       );
       Alert.alert(
         'Agendado na Nuvem ☁️',
@@ -215,6 +233,27 @@ export function SearchGeneratorScreen({
     }
   }
 
+  async function handleToggleAutopilot(nextVal: boolean) {
+    if (nextVal && settings?.plan !== 'pro') {
+      Alert.alert(
+        'Piloto Automático PRO 👑',
+        'O Piloto Automático (08h às 22h) é exclusivo para assinantes PRO!',
+        [
+          { text: 'Agora não', style: 'cancel' },
+          { text: 'Ver Plano PRO', onPress: onOpenPro },
+        ]
+      );
+      return;
+    }
+
+    try {
+      await api.toggleAutopilot(nextVal);
+      onRefreshSettings();
+    } catch (err: any) {
+      Alert.alert('Aviso', err?.message || 'Não foi possível alterar o Piloto Automático.');
+    }
+  }
+
   function handleOpenAutopilot() {
     if (settings?.plan !== 'pro') {
       Alert.alert(
@@ -227,6 +266,8 @@ export function SearchGeneratorScreen({
       );
       return;
     }
+    setAutoNiches(selectedNiches.length > 0 ? selectedNiches : ['todos']);
+    setAutoWaIds((settings?.whatsappAccounts || []).map((a) => a.id));
     setAutopilotOpen(true);
   }
 
@@ -234,14 +275,12 @@ export function SearchGeneratorScreen({
     const interval = Math.max(1, parseInt(autoInterval, 10) || 30);
     const minDiscount = Math.max(0, Math.min(95, parseInt(autoMinDiscount, 10) || 0));
     const count = Math.max(1, Math.min(20, parseInt(autoCount, 10) || 5));
-
-    const nicheLabel =
-      NICHES.find((n) => n.id === selectedNiche)?.label || 'Todos os Nichos';
+    const chosenNiches: NicheId[] = autoNiches.length > 0 ? autoNiches : ['todos'];
 
     setAutoLoading(true);
     try {
       const res = await api.scheduleBatchByNiche(
-        selectedNiche,
+        chosenNiches,
         interval,
         minDiscount,
         count
@@ -249,7 +288,7 @@ export function SearchGeneratorScreen({
       setAutopilotOpen(false);
       Alert.alert(
         'Piloto Automático Ativado ⚡',
-        `${res.scheduledCount} oferta(s) do nicho "${nicheLabel}" com no mínimo ${res.minDiscount}% OFF foram agendadas de ${res.intervalMinutes} em ${res.intervalMinutes} min para ${res.channelsCount} grupo(s)/Status!`
+        `${res.scheduledCount} oferta(s) de ${chosenNiches.length} nicho(s) com no mínimo ${res.minDiscount}% OFF foram agendadas de ${res.intervalMinutes} em ${res.intervalMinutes} min para ${res.channelsCount} grupo(s)/Status!`
       );
     } catch (err: any) {
       if (err?.code === 'PRO_REQUIRED') {
@@ -296,39 +335,47 @@ export function SearchGeneratorScreen({
         />
       ) : null}
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.nichesScroll}
-        contentContainerStyle={{ paddingVertical: 2 }}
+      <SelectDropdown
+        title="🎯 Selecionar Nichos (pode marcar vários)"
+        placeholder="Todos os Nichos"
+        multiSelect
+        options={NICHES.map((n) => ({
+          id: n.id,
+          label: `${n.icon} ${n.label}`,
+        }))}
+        selectedIds={selectedNiches}
+        onChange={(ids) => {
+          setSelectedNiches(ids.length > 0 ? (ids as NicheId[]) : ['todos']);
+        }}
+      />
+
+      {/* CARD PILOTO AUTOMÁTICO ON/OFF (08h às 22h) */}
+      <View
+        style={[
+          styles.autopilotBar,
+          {
+            backgroundColor: colors.card,
+            borderColor: settings?.autopilotEnabled ? colors.save : colors.border,
+          },
+        ]}
       >
-        {NICHES.map((n) => {
-          const active = selectedNiche === n.id;
-          return (
-            <TouchableOpacity
-              key={n.id}
-              activeOpacity={0.78}
-              style={[
-                styles.nicheChip,
-                {
-                  backgroundColor: active ? colors.primary : colors.card,
-                  borderColor: active ? colors.primary : colors.border,
-                },
-              ]}
-              onPress={() => setSelectedNiche(n.id)}
-            >
-              <Text
-                style={[
-                  styles.nicheText,
-                  { color: active ? '#FFFFFF' : colors.text },
-                ]}
-              >
-                {n.icon} {n.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.autopilotBarTitle, { color: colors.text }]}>
+            {settings?.autopilotEnabled
+              ? '🟢 Piloto Automático ATIVADO'
+              : '⚪ Piloto Automático DESATIVADO'}
+          </Text>
+          <Text style={[styles.autopilotBarSub, { color: colors.textMuted }]}>
+            Disparos automáticos apenas de 08h às 22h (Brasília)
+          </Text>
+        </View>
+        <Switch
+          value={Boolean(settings?.autopilotEnabled)}
+          onValueChange={handleToggleAutopilot}
+          trackColor={{ false: colors.border, true: colors.save }}
+          thumbColor="#FFFFFF"
+        />
+      </View>
 
       <TouchableOpacity
         activeOpacity={0.8}
@@ -343,7 +390,7 @@ export function SearchGeneratorScreen({
       >
         <Text style={styles.batchBtnText}>
           {settings?.plan === 'pro'
-            ? '⚡ Configurar Piloto Automático deste Nicho'
+            ? '⚡ Configurar Piloto Automático (08h–22h)'
             : '👑 Piloto Automático por Nicho (Exclusivo PRO)'}
         </Text>
       </TouchableOpacity>
@@ -439,94 +486,38 @@ export function SearchGeneratorScreen({
               })}
             </View>
 
-            {/* SELEÇÃO DE GRUPOS */}
+            {/* SELEÇÃO DE GRUPOS EM LISTA */}
             {postTarget === 'groups' || postTarget === 'both' ? (
-              <View style={{ marginBottom: 10 }}>
-                <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
-                  Grupos selecionados ({selectedChannelIds.length}):
-                </Text>
-                {settings && settings.channels.length > 0 ? (
-                  <View style={styles.groupsWrap}>
-                    {settings.channels.map((ch) => {
-                      const isSelected = selectedChannelIds.includes(ch.id);
-                      return (
-                        <TouchableOpacity
-                          key={ch.id}
-                          style={[
-                            styles.groupChip,
-                            {
-                              borderColor: isSelected ? colors.save : colors.border,
-                              backgroundColor: isSelected
-                                ? colors.successSoft
-                                : colors.inputBg,
-                            },
-                          ]}
-                          onPress={() => toggleChannelSelection(ch.id)}
-                        >
-                          <Text
-                            style={[
-                              styles.groupChipText,
-                              { color: isSelected ? colors.save : colors.text },
-                            ]}
-                          >
-                            {isSelected ? '☑️ ' : '⬜ '}
-                            {ch.name}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                ) : (
-                  <Text style={[styles.noGroupHint, { color: colors.warning }]}>
-                    Nenhum grupo salvo ainda — busque seus grupos na aba ⚙️ Canais ou use o Compartilhamento com Foto abaixo.
-                  </Text>
-                )}
-              </View>
+              <SelectDropdown
+                title="👥 Escolher Grupos"
+                placeholder="Toque para selecionar os grupos..."
+                multiSelect
+                options={(settings?.channels || []).map((ch) => ({
+                  id: ch.id,
+                  label: ch.name,
+                  subtitle: `Nicho: ${NICHES.find((n) => n.id === ch.niche)?.label || 'Todos'}`,
+                }))}
+                selectedIds={selectedChannelIds}
+                onChange={setSelectedChannelIds}
+                emptyMessage="Nenhum grupo salvo ainda — busque seus grupos na aba ⚙️ Canais."
+              />
             ) : null}
 
-            {/* SELEÇÃO DE WHATSAPPS PARA STATUS */}
+            {/* SELEÇÃO DE WHATSAPPS PARA STATUS EM LISTA */}
             {postTarget === 'status' || postTarget === 'both' ? (
-              <View style={{ marginBottom: 10 }}>
-                <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
-                  Postar no Status de quais WhatsApps ({selectedWaAccountIds.length}):
-                </Text>
-                {settings && settings.whatsappAccounts.length > 0 ? (
-                  <View style={styles.groupsWrap}>
-                    {settings.whatsappAccounts.map((acc) => {
-                      const isSelected = selectedWaAccountIds.includes(acc.id);
-                      return (
-                        <TouchableOpacity
-                          key={acc.id}
-                          style={[
-                            styles.groupChip,
-                            {
-                              borderColor: isSelected ? colors.save : colors.border,
-                              backgroundColor: isSelected
-                                ? colors.successSoft
-                                : colors.inputBg,
-                            },
-                          ]}
-                          onPress={() => toggleWaAccountSelection(acc.id)}
-                        >
-                          <Text
-                            style={[
-                              styles.groupChipText,
-                              { color: isSelected ? colors.save : colors.text },
-                            ]}
-                          >
-                            {isSelected ? '🟢 ' : '⬜ '}
-                            {acc.label}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                ) : (
-                  <Text style={[styles.noGroupHint, { color: colors.warning }]}>
-                    Nenhum WhatsApp conectado na nuvem — ao clicar em Postar, vamos abrir a foto + legenda para você colar no Meu Status em 1 toque!
-                  </Text>
-                )}
-              </View>
+              <SelectDropdown
+                title="🟢 WhatsApps para Status"
+                placeholder="Toque para escolher o WhatsApp..."
+                multiSelect
+                options={(settings?.whatsappAccounts || []).map((acc) => ({
+                  id: acc.id,
+                  label: `📱 ${acc.label}`,
+                  subtitle: acc.phoneNumber,
+                }))}
+                selectedIds={selectedWaAccountIds}
+                onChange={setSelectedWaAccountIds}
+                emptyMessage="Nenhum WhatsApp conectado na nuvem — usaremos o compartilhamento em 1 toque com foto!"
+              />
             ) : null}
 
             <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
@@ -623,11 +614,33 @@ export function SearchGeneratorScreen({
             <Text style={[styles.modalTitle, { color: colors.text }]}>
               ⚡ Configurar Piloto Automático
             </Text>
-            <Text style={[styles.headerSub, { color: colors.textMuted }]}>
-              Nicho ativo:{' '}
-              {NICHES.find((n) => n.id === selectedNiche)?.icon}{' '}
-              {NICHES.find((n) => n.id === selectedNiche)?.label}
-            </Text>
+
+            <SelectDropdown
+              title="🎯 Escolher Nichos (pode marcar vários)"
+              placeholder="Selecione 1 ou mais nichos..."
+              multiSelect
+              options={NICHES.map((n) => ({
+                id: n.id,
+                label: `${n.icon} ${n.label}`,
+              }))}
+              selectedIds={autoNiches}
+              onChange={(ids) => setAutoNiches(ids as NicheId[])}
+            />
+
+            {settings && settings.whatsappAccounts.length > 0 ? (
+              <SelectDropdown
+                title="📱 Escolher WhatsApps (pode marcar vários)"
+                placeholder="Selecione 1 ou mais WhatsApps..."
+                multiSelect
+                options={settings.whatsappAccounts.map((acc) => ({
+                  id: acc.id,
+                  label: `📱 ${acc.label}`,
+                  subtitle: acc.phoneNumber,
+                }))}
+                selectedIds={autoWaIds}
+                onChange={setAutoWaIds}
+              />
+            ) : null}
 
             <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
               ⏱️ Disparar de quantos em quantos minutos?
@@ -816,6 +829,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     alignItems: 'center',
     marginBottom: 10,
+  },
+  autopilotBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 8,
+    gap: 8,
+  },
+  autopilotBarTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  autopilotBarSub: {
+    fontSize: 11,
+    marginTop: 1,
   },
   batchBtnText: {
     color: '#FFFFFF',
