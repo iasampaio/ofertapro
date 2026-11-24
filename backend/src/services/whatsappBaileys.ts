@@ -239,12 +239,41 @@ export async function sendBaileysImage(
   }
 
   if (jid === 'status@broadcast') {
+    // No Baileys v6, `statusJidList` é OBRIGATÓRIO para o Status aparecer no seu celular e nos contatos!
+    const myRawId = entry.sock.user?.id || '';
+    const myJid = myRawId
+      ? `${myRawId.split(':')[0].split('@')[0]}@s.whatsapp.net`
+      : `${phoneNumber.replace(/\D/g, '')}@s.whatsapp.net`;
+
+    const statusJidSet = new Set<string>([myJid]);
+    try {
+      const groupsObj = (await entry.sock.groupFetchAllParticipating()) as Record<
+        string,
+        { participants?: Array<{ id?: string }> }
+      >;
+      for (const g of Object.values(groupsObj)) {
+        for (const p of g.participants || []) {
+          if (p.id && p.id.endsWith('@s.whatsapp.net')) {
+            statusJidSet.add(p.id);
+          }
+        }
+      }
+    } catch {
+      // Mesmo sem grupos, o próprio número já garante exibição no Status
+    }
+
     await entry.sock.sendMessage(
       'status@broadcast',
       { image: imagePayload, caption },
-      { broadcast: true }
+      {
+        broadcast: true,
+        statusJidList: Array.from(statusJidSet).slice(0, 500),
+      }
     );
-    return { success: true, message: 'Publicado no Status do WhatsApp com foto!' };
+    return {
+      success: true,
+      message: `Publicado no Status do WhatsApp com foto (${statusJidSet.size} destinatário(s))!`,
+    };
   }
 
   await entry.sock.sendMessage(jid, {
