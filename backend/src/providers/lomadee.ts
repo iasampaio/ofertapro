@@ -1,37 +1,33 @@
 import { NicheId, Offer, StoreCoupon } from '../types';
 
+const LOMADEE_BASE_URL = 'https://api.lomadee.com.br';
+
 const LOMADEE_NICHE_KEYWORDS: Record<NicheId, string[]> = {
-  todos: ['smart tv', 'air fryer', 'fone bluetooth', 'notebook', 'geladeira', 'perfume'],
+  todos: ['smart tv', 'air fryer', 'fone bluetooth', 'notebook', 'perfume', 'celular'],
   eletronicos: ['fone bluetooth', 'smartwatch', 'caixa de som', 'celular'],
   casa_cozinha: ['air fryer', 'aspirador', 'cafeteira', 'panela'],
-  moda_beleza: ['perfume', 'secador cabelo', 'tenis', 'skincare'],
+  moda_beleza: ['perfume', 'secador', 'tenis', 'skincare'],
   maternidade_bebe: ['fralda', 'carrinho bebe', 'mamadeira'],
-  fitness_saude: ['whey protein', 'bicicleta', 'esteira', 'halter'],
-  pets: ['racao cachorro', 'racao gato', 'arranhador'],
+  fitness_saude: ['whey', 'bicicleta', 'esteira', 'halter'],
+  pets: ['racao', 'pet', 'cachorro', 'gato'],
   gamer_info: ['teclado gamer', 'monitor gamer', 'headset gamer', 'mouse gamer'],
-  ferramentas_auto: ['furadeira', 'parafusadeira', 'lavadora alta pressao'],
+  ferramentas_auto: ['furadeira', 'parafusadeira', 'ferramentas'],
 };
 
-interface LomadeeOfferItem {
-  id: string;
-  name: string;
-  price: number;
-  priceFrom?: number;
-  discount?: number;
-  thumbnail?: string;
-  link: string;
-  store?: { id?: number; name?: string };
-  category?: { name?: string };
+function getApiKey(): string {
+  return (process.env.LOMADEE_APP_TOKEN || process.env.LOMADEE_API_KEY || '').trim();
 }
 
-interface LomadeeCouponItem {
-  id: number | string;
-  description: string;
-  code: string;
-  discount?: number;
-  store?: { name?: string };
-  vigency?: string;
-  link: string;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractArray(json: any): any[] {
+  if (Array.isArray(json)) return json;
+  if (Array.isArray(json?.data)) return json.data;
+  if (Array.isArray(json?.products)) return json.products;
+  if (Array.isArray(json?.items)) return json.items;
+  if (Array.isArray(json?.coupons)) return json.coupons;
+  if (Array.isArray(json?.data?.items)) return json.data.items;
+  if (Array.isArray(json?.data?.products)) return json.data.products;
+  return [];
 }
 
 export async function searchLomadeeOffers(
@@ -39,14 +35,13 @@ export async function searchLomadeeOffers(
   niche: NicheId = 'todos',
   limit = 12
 ): Promise<{ offers: Offer[]; mode: 'live' | 'demo'; error?: string }> {
-  const appToken = (process.env.LOMADEE_APP_TOKEN || '').trim();
-  const sourceId = (process.env.LOMADEE_SOURCE_ID || '').trim();
+  const apiKey = getApiKey();
 
-  if (!appToken || !sourceId) {
+  if (!apiKey) {
     return {
       offers: [],
       mode: 'demo',
-      error: 'Configure LOMADEE_APP_TOKEN e LOMADEE_SOURCE_ID no Render.',
+      error: 'Configure LOMADEE_APP_TOKEN (chave lmd_prod_...) no Render.',
     };
   }
 
@@ -56,32 +51,39 @@ export async function searchLomadeeOffers(
       keyword.trim() || pool[Math.floor(Math.random() * pool.length)];
     const randomPage = Math.floor(Math.random() * 3) + 1;
 
-    const url = `https://api.lomadee.com/v3/${encodeURIComponent(
-      appToken
-    )}/offer/_search?sourceId=${encodeURIComponent(sourceId)}&keyword=${encodeURIComponent(
-      searchTerm
-    )}&size=${limit}&page=${randomPage}`;
-
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
-    if (!res.ok) {
-      throw new Error(`Lomadee HTTP ${res.status}`);
+    const params = new URLSearchParams({
+      page: String(randomPage),
+      limit: String(limit),
+    });
+    if (searchTerm) {
+      params.set('search', searchTerm);
     }
 
-    const json = (await res.json()) as {
-      offers?: LomadeeOfferItem[];
-      requestInfo?: { status?: string; message?: string };
-    };
+    const url = `${LOMADEE_BASE_URL}/affiliate/products?${params.toString()}`;
+    const res = await fetch(url, {
+      headers: {
+        Accept: 'application/json',
+        'x-api-key': apiKey,
+      },
+    });
 
-    const items = json.offers || [];
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => '');
+      throw new Error(`Lomadee HTTP ${res.status}: ${errBody.slice(0, 160)}`);
+    }
+
+    let json = await res.json();
+    let items = extractArray(json);
+
+    // Se a página aleatória ou busca vier vazia, tenta página 1 sem filtro
     if (items.length === 0) {
-      // Tenta bestsellers se a busca por palavra-chave vier vazia
-      const bestUrl = `https://api.lomadee.com/v3/${encodeURIComponent(
-        appToken
-      )}/offer/_bestsellers?sourceId=${encodeURIComponent(sourceId)}&size=${limit}&page=1`;
-      const bestRes = await fetch(bestUrl, { headers: { Accept: 'application/json' } });
-      if (bestRes.ok) {
-        const bestJson = (await bestRes.json()) as { offers?: LomadeeOfferItem[] };
-        items.push(...(bestJson.offers || []));
+      const fallbackUrl = `${LOMADEE_BASE_URL}/affiliate/products?page=1&limit=${limit}`;
+      const fbRes = await fetch(fallbackUrl, {
+        headers: { Accept: 'application/json', 'x-api-key': apiKey },
+      });
+      if (fbRes.ok) {
+        json = await fbRes.json();
+        items = extractArray(json);
       }
     }
 
@@ -89,38 +91,67 @@ export async function searchLomadeeOffers(
       return {
         offers: [],
         mode: 'demo',
-        error: json.requestInfo?.message || 'Lomadee retornou 0 ofertas.',
+        error: 'Lomadee retornou 0 produtos. Verifique se você já se afiliou às marcas/campanhas no painel Lomadee.',
       };
     }
 
     const offers: Offer[] = items
-      .filter((o) => o.price > 0 && o.link)
-      .map((o) => {
-        const originalPrice =
-          o.priceFrom && o.priceFrom > o.price ? o.priceFrom : undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((item: any, idx: number): Offer | null => {
+        const title = String(item.name || item.title || '').trim();
+        const price = Number(
+          item.price ?? item.salePrice ?? item.pricing?.price ?? item.value ?? 0
+        );
+        const orig = Number(
+          item.originalPrice ?? item.priceFrom ?? item.listPrice ?? item.pricing?.listPrice ?? 0
+        );
+        const link = String(
+          item.affiliateUrl || item.shortUrl || item.link || item.url || ''
+        ).trim();
+        const imageUrl = String(
+          item.image ||
+            item.imageUrl ||
+            item.thumbnail ||
+            (Array.isArray(item.images) ? item.images[0]?.url || item.images[0] : '') ||
+            ''
+        ).trim();
+
+        if (!title || !link || price <= 0) return null;
+
+        const originalPrice = orig > price ? orig : undefined;
         const discountPercent =
-          o.discount && o.discount > 0
-            ? Math.round(o.discount)
-            : originalPrice
-            ? Math.round(((originalPrice - o.price) / originalPrice) * 100)
-            : 0;
+          Number(item.discount || item.discountPercent || 0) ||
+          (originalPrice ? Math.round(((originalPrice - price) / originalPrice) * 100) : 0);
+
+        const brandName = String(
+          item.brand?.name || item.store?.name || item.advertiser?.name || 'Lojas BR'
+        );
 
         return {
-          id: `lom-${o.id}`,
+          id: `lom-${item.id || idx}-${Date.now().toString().slice(-4)}`,
           store: 'lomadee',
-          title: o.name,
-          price: o.price,
+          title,
+          price,
           originalPrice,
           discountPercent,
-          commissionRate: 8,
-          imageUrl: o.thumbnail || '',
-          productUrl: o.link,
-          affiliateUrl: o.link,
-          shopName: o.store?.name || 'Lojas Parceiras',
-          category: o.category?.name || o.store?.name || 'Lomadee',
+          commissionRate: Number(item.commissionRate || 8),
+          imageUrl,
+          productUrl: link,
+          affiliateUrl: link,
+          shopName: brandName,
+          category: String(item.category?.name || brandName),
           niche,
         };
-      });
+      })
+      .filter((o): o is Offer => o !== null);
+
+    if (offers.length === 0) {
+      return {
+        offers: [],
+        mode: 'demo',
+        error: 'Lomadee retornou itens sem preço/link válido.',
+      };
+    }
 
     return { offers, mode: 'live' };
   } catch (err) {
@@ -131,26 +162,33 @@ export async function searchLomadeeOffers(
 }
 
 export async function fetchLomadeeCoupons(): Promise<StoreCoupon[]> {
-  const appToken = (process.env.LOMADEE_APP_TOKEN || '').trim();
-  const sourceId = (process.env.LOMADEE_SOURCE_ID || '').trim();
-  if (!appToken || !sourceId) return [];
+  const apiKey = getApiKey();
+  if (!apiKey) return [];
 
   try {
-    const url = `https://api.lomadee.com/v3/${encodeURIComponent(
-      appToken
-    )}/coupon/_all?sourceId=${encodeURIComponent(sourceId)}`;
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    const url = `${LOMADEE_BASE_URL}/affiliate/coupons?page=1&limit=15`;
+    const res = await fetch(url, {
+      headers: {
+        Accept: 'application/json',
+        'x-api-key': apiKey,
+      },
+    });
     if (!res.ok) return [];
 
-    const json = (await res.json()) as { coupons?: LomadeeCouponItem[] };
-    return (json.coupons || []).slice(0, 15).map((c) => ({
-      id: `lom-cp-${c.id}`,
-      store: 'lomadee',
-      code: c.code || 'OFERTA',
-      title: `${c.store?.name || 'Loja Parceira'} — ${c.description}`,
-      description: c.description,
-      expiresLabel: c.vigency || 'Válido por tempo limitado',
-      affiliateUrl: c.link,
+    const json = await res.json();
+    const items = extractArray(json);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return items.slice(0, 15).map((c: any, idx: number) => ({
+      id: `lom-cp-${c.id || idx}`,
+      store: 'lomadee' as const,
+      code: String(c.code || c.couponCode || 'OFERTA'),
+      title: String(
+        c.title || `${c.brand?.name || c.store?.name || 'Loja Parceira'} — ${c.description || 'Cupom Ativo'}`
+      ),
+      description: String(c.description || c.rules || 'Desconto especial da campanha.'),
+      expiresLabel: String(c.expiresAt || c.vigency || c.endDate || 'Tempo limitado'),
+      affiliateUrl: String(c.affiliateUrl || c.link || c.url || 'https://www.lomadee.com'),
     }));
   } catch {
     return [];

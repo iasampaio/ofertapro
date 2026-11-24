@@ -42,7 +42,7 @@ offersRouter.get('/debug-stores', async (_req, res) => {
       sampleLink: shopeeRes.offers[0]?.affiliateUrl || null,
     },
     lomadee: {
-      hasEnvKeys: Boolean(process.env.LOMADEE_APP_TOKEN && process.env.LOMADEE_SOURCE_ID),
+      hasEnvKeys: Boolean(process.env.LOMADEE_APP_TOKEN || process.env.LOMADEE_API_KEY),
       mode: lomadeeRes.mode,
       error: lomadeeRes.error || null,
       sampleLink: lomadeeRes.offers[0]?.affiliateUrl || null,
