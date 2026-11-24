@@ -11,6 +11,7 @@ interface ActiveSession {
   sock: any;
   connected: boolean;
   phoneNumber: string;
+  contactJids: Set<string>;
   lastError?: string;
 }
 
@@ -84,10 +85,27 @@ export async function requestBaileysPairingCode(
     sock,
     connected: false,
     phoneNumber,
+    contactJids: new Set<string>(),
   };
   sessions.set(accountId, entry);
 
   sock.ev.on('creds.update', saveCreds);
+
+  // Coleta contatos reais da agenda para o Status do WhatsApp
+  sock.ev.on('contacts.upsert', (contacts: Array<{ id?: string }>) => {
+    for (const c of contacts || []) {
+      if (c.id && c.id.endsWith('@s.whatsapp.net')) {
+        entry.contactJids.add(c.id);
+      }
+    }
+  });
+  sock.ev.on('messaging-history.set', (data: { contacts?: Array<{ id?: string }> }) => {
+    for (const c of data?.contacts || []) {
+      if (c.id && c.id.endsWith('@s.whatsapp.net')) {
+        entry.contactJids.add(c.id);
+      }
+    }
+  });
 
   const cleanPhone = phoneNumber.replace(/\D/g, '');
 
@@ -181,10 +199,27 @@ export async function reconnectBaileysSession(
     sock,
     connected: false,
     phoneNumber,
+    contactJids: new Set<string>(),
   };
   sessions.set(accountId, entry);
 
   sock.ev.on('creds.update', saveCreds);
+
+  // Coleta contatos reais da agenda para o Status do WhatsApp
+  sock.ev.on('contacts.upsert', (contacts: Array<{ id?: string }>) => {
+    for (const c of contacts || []) {
+      if (c.id && c.id.endsWith('@s.whatsapp.net')) {
+        entry.contactJids.add(c.id);
+      }
+    }
+  });
+  sock.ev.on('messaging-history.set', (data: { contacts?: Array<{ id?: string }> }) => {
+    for (const c of data?.contacts || []) {
+      if (c.id && c.id.endsWith('@s.whatsapp.net')) {
+        entry.contactJids.add(c.id);
+      }
+    }
+  });
   sock.ev.on('connection.update', (update: { connection?: string }) => {
     if (update.connection === 'open') {
       entry.connected = true;
@@ -240,35 +275,26 @@ export async function sendBaileysImage(
 
   if (jid === 'status@broadcast') {
     const myRawId = entry.sock.user?.id || '';
+    const myLid = entry.sock.user?.lid || '';
     const myDigits = myRawId
       ? myRawId.split(':')[0].split('@')[0].replace(/\D/g, '')
       : phoneNumber.replace(/\D/g, '');
     const myJid = `${myDigits}@s.whatsapp.net`;
 
+    // Monta statusJidList com seu próprio JID + LID + contatos reais sincronizados
     const statusJidSet = new Set<string>([myJid]);
-    try {
-      const groupsObj = (await entry.sock.groupFetchAllParticipating()) as Record<
-        string,
-        { participants?: Array<{ id?: string }> }
-      >;
-      for (const g of Object.values(groupsObj)) {
-        for (const p of g.participants || []) {
-          if (p.id && /^\d+@s\.whatsapp\.net$/.test(p.id)) {
-            statusJidSet.add(p.id);
-          }
-        }
-      }
-    } catch {
-      // Mesmo sem grupos, o próprio número já garante exibição no Status
+    if (myRawId) statusJidSet.add(myRawId);
+    if (myLid) statusJidSet.add(myLid);
+    for (const cJid of entry.contactJids) {
+      statusJidSet.add(cJid);
+      if (statusJidSet.size >= 80) break;
     }
 
-    const statusJidList = Array.from(statusJidSet).slice(0, 300);
+    const statusJidList = Array.from(statusJidSet);
     const shortCaption = caption.slice(0, 650);
 
     console.log(
-      `[Baileys] Postando Status para ${statusJidList.length} JIDs (myJid=${myJid}, isBuffer=${Buffer.isBuffer(
-        imagePayload
-      )})`
+      `[Baileys] Postando Status: ${statusJidList.length} contatos (myJid=${myJid}, hasLid=${Boolean(myLid)})`
     );
 
     await entry.sock.sendMessage(
@@ -279,6 +305,7 @@ export async function sendBaileysImage(
         caption: shortCaption,
       },
       {
+        broadcast: true,
         statusJidList,
         backgroundColor: '#7C3AED',
         font: 1,
