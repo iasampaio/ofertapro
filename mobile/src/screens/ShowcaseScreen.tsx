@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import { Ionicons } from '@expo/vector-icons';
 import { AdBanner } from '../components/AdBanner';
 import { OfferCard } from '../components/OfferCard';
 import { api, Offer, StoreCoupon, StoreId } from '../services/api';
@@ -120,12 +121,41 @@ export function ShowcaseScreen({ isPro }: ShowcaseScreenProps) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Text style={[styles.headerTitle, { color: colors.text }]}>
-        🔥 Vitrine de Achadinhos
-      </Text>
-      <Text style={[styles.headerSub, { color: colors.textMuted }]}>
-        Shopee, Mercado Livre, Amazon e AliExpress com desconto real.
-      </Text>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 8,
+        }}
+      >
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>
+            Achadinhos do Dia
+          </Text>
+          <Text style={[styles.headerSub, { color: colors.textMuted, marginBottom: 0 }]}>
+            Shopee, Mercado Livre, Amazon e AliExpress
+          </Text>
+        </View>
+        <TouchableOpacity
+          activeOpacity={0.75}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 5,
+            backgroundColor: colors.primarySoft,
+            paddingHorizontal: 10,
+            paddingVertical: 7,
+            borderRadius: 10,
+          }}
+          onPress={loadData}
+        >
+          <Ionicons name="refresh" size={15} color={colors.primaryDark} />
+          <Text style={{ color: colors.primaryDark, fontWeight: '800', fontSize: 12 }}>
+            Atualizar
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       <View style={[styles.segmentRow, { backgroundColor: colors.primarySoft }]}>
         <TouchableOpacity

@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { Ionicons } from '@expo/vector-icons';
 import { api, AuthUser, AutomationSettings, setAuthToken } from './src/services/api';
 import { ShowcaseScreen } from './src/screens/ShowcaseScreen';
 import { SearchGeneratorScreen } from './src/screens/SearchGeneratorScreen';
@@ -21,46 +22,47 @@ import { AuthScreen } from './src/screens/AuthScreen';
 import { ThemeProvider, useTheme } from './src/theme';
 
 type ScreenKey = 'showcase' | 'automation' | 'scheduler' | 'channels' | 'pro';
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
 const MENU_ITEMS: Array<{
   key: ScreenKey;
-  icon: string;
+  icon: IoniconName;
   label: string;
   subtitle: string;
 }> = [
   {
     key: 'showcase',
-    icon: '🔥',
+    icon: 'flame-outline',
     label: 'Vitrine & Cupons',
     subtitle: 'Achadinhos das 4 lojas + Cupons',
   },
   {
     key: 'automation',
-    icon: '🤖',
+    icon: 'flash-outline',
     label: 'Automação por Nicho',
     subtitle: 'Piloto Automático (08h–22h) e Disparos',
   },
   {
     key: 'scheduler',
-    icon: '☁️',
+    icon: 'calendar-outline',
     label: 'Agendador na Nuvem',
     subtitle: 'Fila de postagens 24h',
   },
   {
     key: 'channels',
-    icon: '⚙️',
+    icon: 'settings-outline',
     label: 'Canais, WhatsApps & APIs',
     subtitle: 'Números, grupos, Status e chaves',
   },
   {
     key: 'pro',
-    icon: '👑',
+    icon: 'diamond-outline',
     label: 'Plano Afiliado PRO',
-    subtitle: 'Desbloquear Piloto Automático e ilimitado',
+    subtitle: 'Piloto Automático e WhatsApps ilimitados',
   },
 ];
 
-const DRAWER_WIDTH = Math.min(290, Math.round(Dimensions.get('window').width * 0.8));
+const DRAWER_WIDTH = Math.min(296, Math.round(Dimensions.get('window').width * 0.82));
 
 function MainApp() {
   const { colors, isDark, toggleTheme } = useTheme();
@@ -145,6 +147,7 @@ function MainApp() {
 
   const requiresLogin = activeScreen !== 'showcase' && !user;
   const currentMenuItem = MENU_ITEMS.find((m) => m.key === activeScreen);
+  const userInitial = user?.name ? user.name.trim().charAt(0).toUpperCase() : 'O';
 
   return (
     <SafeAreaView
@@ -153,7 +156,7 @@ function MainApp() {
     >
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
-      {/* Barra Superior com Menu Hambúrguer (☰) + Título + Botão Tema */}
+      {/* Barra Superior Profissional */}
       <View
         style={[
           styles.topBar,
@@ -166,15 +169,20 @@ function MainApp() {
           onPress={toggleDrawer}
           accessibilityLabel="Abrir ou fechar menu lateral"
         >
-          <View style={[styles.bar, { backgroundColor: colors.primary }]} />
-          <View style={[styles.bar, { backgroundColor: colors.primary }]} />
-          <View style={[styles.bar, { backgroundColor: colors.primary }]} />
+          <Ionicons name="menu" size={22} color={colors.primary} />
         </TouchableOpacity>
 
-        <View style={{ flex: 1, marginLeft: 10 }}>
-          <Text style={[styles.brandText, { color: colors.primary }]} numberOfLines={1}>
-            💜 OfertaPro
-          </Text>
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={[styles.brandText, { color: colors.text }]} numberOfLines={1}>
+              Oferta<Text style={{ color: colors.primary }}>Pro</Text>
+            </Text>
+            {settings?.plan === 'pro' ? (
+              <View style={[styles.proPill, { backgroundColor: colors.proGold }]}>
+                <Text style={styles.proPillText}>PRO</Text>
+              </View>
+            ) : null}
+          </View>
           <Text style={[styles.screenSub, { color: colors.textMuted }]} numberOfLines={1}>
             {currentMenuItem?.label}
           </Text>
@@ -185,13 +193,18 @@ function MainApp() {
           style={[styles.themeBtn, { backgroundColor: colors.primarySoft }]}
           onPress={toggleTheme}
         >
+          <Ionicons
+            name={isDark ? 'sunny-outline' : 'moon-outline'}
+            size={16}
+            color={colors.primaryDark}
+          />
           <Text style={[styles.themeBtnText, { color: colors.primaryDark }]}>
-            {isDark ? '☀️ Claro' : '🌙 Escuro'}
+            {isDark ? 'Claro' : 'Escuro'}
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Conteúdo Principal (100% da tela livre, sem barra inferior) */}
+      {/* Conteúdo Principal */}
       <View style={styles.content}>
         {activeScreen === 'showcase' ? (
           <ShowcaseScreen isPro={settings?.plan === 'pro'} />
@@ -228,7 +241,7 @@ function MainApp() {
         )}
       </View>
 
-      {/* Menu Lateral Retrátil (Overlay + Gaveta Animada) */}
+      {/* Menu Lateral Retrátil Premium */}
       {drawerOpen ? (
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
           <Animated.View
@@ -262,19 +275,26 @@ function MainApp() {
                 { backgroundColor: colors.proBg, borderBottomColor: colors.border },
               ]}
             >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.drawerBrand}>💜 OfertaPro</Text>
+              <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
+                <Text style={styles.avatarText}>{userInitial}</Text>
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.drawerBrand} numberOfLines={1}>
+                  {user ? user.name : 'OfertaPro'}
+                </Text>
                 <Text style={styles.drawerUser} numberOfLines={1}>
                   {user
-                    ? `${user.name} • ${settings?.plan === 'pro' ? 'PRO 👑' : 'Grátis'}`
-                    : 'Vitrine & Automação de Afiliados'}
+                    ? settings?.plan === 'pro'
+                      ? 'Assinante PRO Ativo'
+                      : 'Plano Grátis'
+                    : 'Achadinhos & Automação'}
                 </Text>
               </View>
               <TouchableOpacity
                 style={styles.drawerCloseBtn}
                 onPress={closeDrawer}
               >
-                <Text style={styles.drawerCloseText}>✕</Text>
+                <Ionicons name="close" size={22} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
 
@@ -294,7 +314,20 @@ function MainApp() {
                     ]}
                     onPress={() => navigateTo(item.key)}
                   >
-                    <Text style={styles.drawerItemIcon}>{item.icon}</Text>
+                    <View
+                      style={[
+                        styles.drawerIconWrap,
+                        {
+                          backgroundColor: active ? colors.primary : colors.inputBg,
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name={item.icon}
+                        size={18}
+                        color={active ? '#FFFFFF' : colors.primary}
+                      />
+                    </View>
                     <View style={{ flex: 1 }}>
                       <Text
                         style={[
@@ -326,8 +359,13 @@ function MainApp() {
                 style={[styles.drawerFooterBtn, { backgroundColor: colors.primarySoft }]}
                 onPress={toggleTheme}
               >
+                <Ionicons
+                  name={isDark ? 'sunny-outline' : 'moon-outline'}
+                  size={16}
+                  color={colors.primaryDark}
+                />
                 <Text style={[styles.drawerFooterText, { color: colors.primaryDark }]}>
-                  {isDark ? '☀️ Mudar para Tema Claro' : '🌙 Mudar para Tema Escuro'}
+                  {isDark ? 'Mudar para Tema Claro' : 'Mudar para Tema Escuro'}
                 </Text>
               </TouchableOpacity>
 
@@ -339,11 +377,16 @@ function MainApp() {
                   ]}
                   onPress={handleLogout}
                 >
+                  <Ionicons name="log-out-outline" size={16} color={colors.danger} />
                   <Text style={[styles.drawerFooterText, { color: colors.danger }]}>
-                    🚪 Sair da Conta
+                    Sair da Conta
                   </Text>
                 </TouchableOpacity>
               ) : null}
+
+              <Text style={[styles.versionText, { color: colors.textMuted }]}>
+                OfertaPro v1.0.0 • Nuvem Ativa
+              </Text>
             </View>
           </Animated.View>
         </View>
@@ -372,32 +415,46 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderBottomWidth: 1,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
   },
   hamburgerBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
-  },
-  bar: {
-    width: 18,
-    height: 2.5,
-    borderRadius: 2,
   },
   brandText: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 17,
+    fontWeight: '900',
+    letterSpacing: -0.3,
+  },
+  proPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  proPillText: {
+    color: '#0F172A',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
   screenSub: {
     fontSize: 11,
     fontWeight: '600',
   },
   themeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingVertical: 7,
+    borderRadius: 18,
   },
   themeBtnText: {
     fontSize: 11,
@@ -436,38 +493,50 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
     borderBottomWidth: 1,
   },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    color: '#FFFFFF',
+    fontSize: 19,
+    fontWeight: '900',
+  },
   drawerBrand: {
     color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '900',
+    fontSize: 17,
+    fontWeight: '800',
   },
   drawerUser: {
     color: '#E9D5FF',
     fontSize: 12,
-    marginTop: 3,
+    marginTop: 2,
   },
   drawerCloseBtn: {
-    padding: 8,
-  },
-  drawerCloseText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '800',
+    padding: 6,
   },
   drawerList: {
     flex: 1,
-    paddingTop: 8,
+    paddingTop: 10,
   },
   drawerItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     borderLeftWidth: 4,
     gap: 12,
+    marginBottom: 2,
   },
-  drawerItemIcon: {
-    fontSize: 20,
+  drawerIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   drawerItemLabel: {
     fontSize: 14,
@@ -481,12 +550,20 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
   },
   drawerFooterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
     paddingVertical: 10,
     borderRadius: 10,
-    alignItems: 'center',
   },
   drawerFooterText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  versionText: {
+    textAlign: 'center',
+    fontSize: 10,
+    marginTop: 10,
   },
 });

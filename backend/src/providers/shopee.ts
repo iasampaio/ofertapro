@@ -257,61 +257,68 @@ export async function searchShopeeOffers(
     return getDemoFallback();
   }
 
-  try {
-    // Na API oficial da Shopee, não enviar `listType` quando `keyword` estiver preenchido
-    const query = effectiveKeyword
-      ? `
-        query SearchOffers($keyword: String, $limit: Int) {
-          productOfferV2(keyword: $keyword, sortType: 2, page: 1, limit: $limit) {
-            nodes {
-              itemId
-              productName
-              priceMin
-              priceMax
-              priceDiscountRate
-              commissionRate
-              imageUrl
-              productLink
-              offerLink
-              ratingStar
-              sales
-              shopName
-            }
-          }
-        }
-      `
-      : `
-        query TopOffers($limit: Int) {
-          productOfferV2(listType: 1, sortType: 2, page: 1, limit: $limit) {
-            nodes {
-              itemId
-              productName
-              priceMin
-              priceMax
-              priceDiscountRate
-              commissionRate
-              imageUrl
-              productLink
-              offerLink
-              ratingStar
-              sales
-              shopName
-            }
-          }
-        }
-      `;
+  const SHOWCASE_KEYWORDS = [
+    'fone bluetooth',
+    'cozinha',
+    'garrafa termica',
+    'smartwatch',
+    'organizador casa',
+    'beleza skincare',
+    'led luminaria',
+    'acessorios celular',
+  ];
 
-    const variables = effectiveKeyword
-      ? { keyword: effectiveKeyword, limit }
-      : { limit };
+  try {
+    const randomPage = Math.floor(Math.random() * 4) + 1; // Páginas 1 a 4 para sempre trazer ofertas novas ao atualizar
+    const searchTerm =
+      effectiveKeyword ||
+      SHOWCASE_KEYWORDS[Math.floor(Math.random() * SHOWCASE_KEYWORDS.length)];
+
+    const query = `
+      query SearchOffers($keyword: String, $page: Int, $limit: Int) {
+        productOfferV2(keyword: $keyword, sortType: 2, page: $page, limit: $limit) {
+          nodes {
+            itemId
+            productName
+            priceMin
+            priceMax
+            priceDiscountRate
+            commissionRate
+            imageUrl
+            productLink
+            offerLink
+            ratingStar
+            sales
+            shopName
+          }
+        }
+      }
+    `;
 
     const data = await callShopeeGraphQL<{
       productOfferV2: { nodes: ShopeeProductNode[] };
-    }>(appId, appSecret, query, variables);
+    }>(appId, appSecret, query, {
+      keyword: searchTerm,
+      page: randomPage,
+      limit,
+    });
 
-    const nodes = data.productOfferV2?.nodes || [];
+    let nodes = data.productOfferV2?.nodes || [];
+
+    // Se a página aleatória veio vazia, tenta página 1 com o mesmo termo
+    if (nodes.length === 0 && randomPage > 1) {
+      const retryData = await callShopeeGraphQL<{
+        productOfferV2: { nodes: ShopeeProductNode[] };
+      }>(appId, appSecret, query, {
+        keyword: searchTerm,
+        page: 1,
+        limit,
+      });
+      nodes = retryData.productOfferV2?.nodes || [];
+    }
+
     if (nodes.length === 0) {
-      return getDemoFallback('Shopee retornou 0 resultados para este termo.');
+      return getDemoFallback(`Shopee retornou 0 resultados para "${searchTerm}".`);
     }
 
     const offers: Offer[] = nodes.map((n) => {

@@ -41,6 +41,7 @@ offersRouter.get('/debug-stores', async (_req, res) => {
     },
     mercadolivre: {
       mode: mlRes.mode,
+      error: mlRes.error || null,
       sampleLink: mlRes.offers[0]?.affiliateUrl || null,
     },
   });

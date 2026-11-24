@@ -308,7 +308,8 @@ export async function searchOtherStoreOffers(
   keyword: string,
   credentials: AffiliateCredentials,
   niche: NicheId = 'todos'
-): Promise<{ offers: Offer[]; mode: 'live' | 'demo' }> {
+): Promise<{ offers: Offer[]; mode: 'live' | 'demo'; error?: string }> {
+  let mlError: string | undefined;
   // Busca AO VIVO automática no Mercado Livre Brasil
   if (store === 'mercadolivre') {
     try {
@@ -321,7 +322,8 @@ export async function searchOtherStoreOffers(
         return { offers: liveOffers, mode: 'live' };
       }
     } catch (err) {
-      console.warn('[MercadoLivreAPI] Fallback para demo:', err);
+      mlError = err instanceof Error ? err.message : 'Erro Mercado Livre';
+      console.warn('[MercadoLivreAPI] Fallback para demo:', mlError);
     }
   }
 
@@ -355,5 +357,6 @@ export async function searchOtherStoreOffers(
   return {
     offers: base,
     mode: 'demo',
+    error: mlError,
   };
 }

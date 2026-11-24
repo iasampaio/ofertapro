@@ -543,6 +543,8 @@ automationRouter.post('/schedule/batch-by-niche', async (req: AuthenticatedReque
       minDiscount = 0,
       count = 5,
       channelIds,
+      targetMode = 'groups',
+      whatsappAccountIds = [],
     } = req.body as {
       niche?: NicheId;
       niches?: NicheId[];
@@ -550,6 +552,8 @@ automationRouter.post('/schedule/batch-by-niche', async (req: AuthenticatedReque
       minDiscount?: number;
       count?: number;
       channelIds?: string[];
+      targetMode?: 'groups' | 'status' | 'both';
+      whatsappAccountIds?: string[];
     };
 
     const chosenNiches: NicheId[] =
@@ -558,20 +562,55 @@ automationRouter.post('/schedule/batch-by-niche', async (req: AuthenticatedReque
         : [niche || 'todos'];
     const includesAll = chosenNiches.includes('todos');
 
-    const userChannels = dbStore.listChannels(user.id).filter((c) => c.enabled);
-    const matchingChannels =
-      channelIds && channelIds.length > 0
-        ? userChannels.filter((c) => channelIds.includes(c.id))
-        : includesAll
-        ? userChannels
-        : userChannels.filter(
-            (c) => chosenNiches.includes(c.niche) || c.niche === 'todos'
-          );
+    let userChannels = dbStore.listChannels(user.id).filter((c) => c.enabled);
+    const matchingChannels: typeof userChannels = [];
+
+    // 1. Inclui Grupos quando targetMode for 'groups' ou 'both'
+    if (targetMode === 'groups' || targetMode === 'both') {
+      const groupChannels = userChannels.filter((c) => c.type !== 'whatsapp_status');
+      const selectedGroups =
+        channelIds && channelIds.length > 0
+          ? groupChannels.filter((c) => channelIds.includes(c.id))
+          : includesAll
+          ? groupChannels
+          : groupChannels.filter(
+              (c) => chosenNiches.includes(c.niche) || c.niche === 'todos'
+            );
+      matchingChannels.push(...selectedGroups);
+    }
+
+    // 2. Inclui Status dos WhatsApps selecionados quando targetMode for 'status' ou 'both'
+    if (targetMode === 'status' || targetMode === 'both') {
+      const userAccounts = dbStore.listWhatsAppAccounts(user.id);
+      const chosenAccounts =
+        whatsappAccountIds.length > 0
+          ? userAccounts.filter((a) => whatsappAccountIds.includes(a.id))
+          : userAccounts;
+
+      for (const acc of chosenAccounts) {
+        let statusCh = userChannels.find(
+          (c) => c.type === 'whatsapp_status' && c.whatsappAccountId === acc.id
+        );
+        if (!statusCh) {
+          statusCh = dbStore.addChannel(user.id, {
+            name: `Status — ${acc.label}`,
+            type: 'whatsapp_status',
+            niche: 'todos',
+            whatsappAccountId: acc.id,
+            targetId: 'status@broadcast',
+          });
+          userChannels = [...userChannels, statusCh];
+        }
+        matchingChannels.push(statusCh);
+      }
+    }
 
     if (matchingChannels.length === 0) {
       res.status(400).json({
         error:
-          'Nenhum grupo ou Status ativo encontrado para os nichos escolhidos. Cadastre um destino na aba Canais primeiro.',
+          targetMode === 'status'
+            ? 'Nenhum WhatsApp conectado encontrado para postar no Status. Conecte seu WhatsApp na aba Canais.'
+            : 'Nenhum grupo ou Status ativo encontrado para os nichos escolhidos. Cadastre um destino na aba Canais primeiro.',
       });
       return;
     }

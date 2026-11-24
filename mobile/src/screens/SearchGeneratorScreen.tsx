@@ -61,10 +61,11 @@ export function SearchGeneratorScreen({
 
   // Modal de configuração do Piloto Automático (PRO)
   const [autopilotOpen, setAutopilotOpen] = useState(false);
+  const [autoTargetMode, setAutoTargetMode] = useState<PostTargetMode>('both');
   const [autoNiches, setAutoNiches] = useState<NicheId[]>(['todos']);
   const [autoWaIds, setAutoWaIds] = useState<string[]>([]);
   const [autoInterval, setAutoInterval] = useState('30');
-  const [autoMinDiscount, setAutoMinDiscount] = useState('30');
+  const [autoMinDiscount, setAutoMinDiscount] = useState('5');
   const [autoCount, setAutoCount] = useState('5');
   const [autoLoading, setAutoLoading] = useState(false);
 
@@ -283,12 +284,21 @@ export function SearchGeneratorScreen({
         chosenNiches,
         interval,
         minDiscount,
-        count
+        count,
+        autoTargetMode,
+        autoWaIds
       );
       setAutopilotOpen(false);
+      onRefreshSettings();
+      const targetDesc =
+        autoTargetMode === 'status'
+          ? 'Status do WhatsApp'
+          : autoTargetMode === 'groups'
+          ? 'Grupos'
+          : 'Grupos + Status do WhatsApp';
       Alert.alert(
         'Piloto Automático Ativado ⚡',
-        `${res.scheduledCount} oferta(s) de ${chosenNiches.length} nicho(s) com no mínimo ${res.minDiscount}% OFF foram agendadas de ${res.intervalMinutes} em ${res.intervalMinutes} min para ${res.channelsCount} grupo(s)/Status!`
+        `${res.scheduledCount} oferta(s) de ${chosenNiches.length} nicho(s) (${res.minDiscount}%+ OFF) agendadas de ${res.intervalMinutes} em ${res.intervalMinutes} min (08h–22h) para ${targetDesc}!`
       );
     } catch (err: any) {
       if (err?.code === 'PRO_REQUIRED') {
@@ -630,189 +640,226 @@ export function SearchGeneratorScreen({
           style={styles.modalOverlay}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <ScrollView
-            style={[styles.modalCard, { backgroundColor: colors.card }]}
-            contentContainerStyle={{ paddingBottom: 24 }}
-            keyboardShouldPersistTaps="handled"
-          >
-            <Text style={[styles.modalTitle, { color: colors.text }]}>
-              ⚡ Configurar Piloto Automático
-            </Text>
-
-            <SelectDropdown
-              title="🎯 Escolher Nichos (pode marcar vários)"
-              placeholder="Selecione 1 ou mais nichos..."
-              multiSelect
-              options={NICHES.map((n) => ({
-                id: n.id,
-                label: `${n.icon} ${n.label}`,
-              }))}
-              selectedIds={autoNiches}
-              onChange={(ids) => setAutoNiches(ids as NicheId[])}
-            />
-
-            {settings && settings.whatsappAccounts.length > 0 ? (
-              <SelectDropdown
-                title="📱 Escolher WhatsApps (pode marcar vários)"
-                placeholder="Selecione 1 ou mais WhatsApps..."
-                multiSelect
-                options={settings.whatsappAccounts.map((acc) => ({
-                  id: acc.id,
-                  label: `📱 ${acc.label}`,
-                  subtitle: acc.phoneNumber,
-                }))}
-                selectedIds={autoWaIds}
-                onChange={setAutoWaIds}
-              />
-            ) : null}
-
-            <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
-              ⏱️ Disparar de quantos em quantos minutos?
-            </Text>
-            <View style={styles.groupsWrap}>
-              {['10', '15', '30', '60'].map((m) => {
-                const active = autoInterval === m;
-                return (
-                  <TouchableOpacity
-                    key={m}
-                    style={[
-                      styles.groupChip,
-                      {
-                        borderColor: active ? colors.primary : colors.border,
-                        backgroundColor: active ? colors.primary : colors.inputBg,
-                      },
-                    ]}
-                    onPress={() => setAutoInterval(m)}
-                  >
-                    <Text
-                      style={[
-                        styles.groupChipText,
-                        { color: active ? '#FFFFFF' : colors.text },
-                      ]}
-                    >
-                      {m} min
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-              <TextInput
-                style={[
-                  styles.minutesInput,
-                  {
-                    borderColor: colors.border,
-                    backgroundColor: colors.inputBg,
-                    color: colors.text,
-                  },
-                ]}
-                keyboardType="numeric"
-                value={autoInterval}
-                onChangeText={setAutoInterval}
-                placeholder="min"
-                placeholderTextColor={colors.textMuted}
-              />
-            </View>
-
-            <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
-              🏷️ Desconto mínimo (% OFF):
-            </Text>
-            <View style={styles.groupsWrap}>
-              {['20', '30', '40', '50', '60'].map((d) => {
-                const active = autoMinDiscount === d;
-                return (
-                  <TouchableOpacity
-                    key={d}
-                    style={[
-                      styles.groupChip,
-                      {
-                        borderColor: active ? colors.primary : colors.border,
-                        backgroundColor: active ? colors.primary : colors.inputBg,
-                      },
-                    ]}
-                    onPress={() => setAutoMinDiscount(d)}
-                  >
-                    <Text
-                      style={[
-                        styles.groupChipText,
-                        { color: active ? '#FFFFFF' : colors.text },
-                      ]}
-                    >
-                      {d}%+
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-              <TextInput
-                style={[
-                  styles.minutesInput,
-                  {
-                    borderColor: colors.border,
-                    backgroundColor: colors.inputBg,
-                    color: colors.text,
-                  },
-                ]}
-                keyboardType="numeric"
-                value={autoMinDiscount}
-                onChangeText={setAutoMinDiscount}
-                placeholder="%"
-                placeholderTextColor={colors.textMuted}
-              />
-            </View>
-
-            <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
-              📦 Quantidade de ofertas para agendar na fila:
-            </Text>
-            <View style={styles.groupsWrap}>
-              {['3', '5', '10'].map((q) => {
-                const active = autoCount === q;
-                return (
-                  <TouchableOpacity
-                    key={q}
-                    style={[
-                      styles.groupChip,
-                      {
-                        borderColor: active ? colors.primary : colors.border,
-                        backgroundColor: active ? colors.primary : colors.inputBg,
-                      },
-                    ]}
-                    onPress={() => setAutoCount(q)}
-                  >
-                    <Text
-                      style={[
-                        styles.groupChipText,
-                        { color: active ? '#FFFFFF' : colors.text },
-                      ]}
-                    >
-                      {q} ofertas
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={[styles.modalBtn, { backgroundColor: colors.save, marginTop: 8 }]}
-              onPress={handleConfirmAutopilot}
-              disabled={autoLoading}
+          <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
+            <ScrollView
+              showsVerticalScrollIndicator
+              contentContainerStyle={{ paddingBottom: 20 }}
+              keyboardShouldPersistTaps="handled"
             >
-              {autoLoading ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.modalBtnText}>
-                  ✅ Salvar e Ativar Piloto Automático
-                </Text>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.closeBtn}
-              onPress={() => setAutopilotOpen(false)}
-            >
-              <Text style={[styles.closeBtnText, { color: colors.textMuted }]}>
-                Cancelar
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                ⚡ Configurar Piloto Automático (08h–22h)
               </Text>
-            </TouchableOpacity>
-          </ScrollView>
+
+              <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
+                📍 Onde o Piloto Automático vai postar?
+              </Text>
+              <View style={[styles.targetTabs, { backgroundColor: colors.inputBg }]}>
+                {(
+                  [
+                    { id: 'groups', label: '👥 Grupos' },
+                    { id: 'status', label: '🟢 Status WA' },
+                    { id: 'both', label: '🚀 Ambos' },
+                  ] as const
+                ).map((t) => {
+                  const active = autoTargetMode === t.id;
+                  return (
+                    <TouchableOpacity
+                      key={t.id}
+                      activeOpacity={0.8}
+                      style={[
+                        styles.targetTab,
+                        active && { backgroundColor: colors.primary },
+                      ]}
+                      onPress={() => setAutoTargetMode(t.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.targetTabText,
+                          { color: active ? '#FFFFFF' : colors.textMuted },
+                        ]}
+                      >
+                        {t.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
+                ⏱️ Disparar de quantos em quantos minutos?
+              </Text>
+              <View style={styles.groupsWrap}>
+                {['10', '15', '30', '60'].map((m) => {
+                  const active = autoInterval === m;
+                  return (
+                    <TouchableOpacity
+                      key={m}
+                      style={[
+                        styles.groupChip,
+                        {
+                          borderColor: active ? colors.primary : colors.border,
+                          backgroundColor: active ? colors.primary : colors.inputBg,
+                        },
+                      ]}
+                      onPress={() => setAutoInterval(m)}
+                    >
+                      <Text
+                        style={[
+                          styles.groupChipText,
+                          { color: active ? '#FFFFFF' : colors.text },
+                        ]}
+                      >
+                        {m} min
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                <TextInput
+                  style={[
+                    styles.minutesInput,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor: colors.inputBg,
+                      color: colors.text,
+                    },
+                  ]}
+                  keyboardType="numeric"
+                  value={autoInterval}
+                  onChangeText={setAutoInterval}
+                  placeholder="min"
+                  placeholderTextColor={colors.textMuted}
+                />
+              </View>
+
+              <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
+                🏷️ Desconto mínimo (% OFF):
+              </Text>
+              <View style={styles.groupsWrap}>
+                {['5', '10', '20', '30', '40', '50'].map((d) => {
+                  const active = autoMinDiscount === d;
+                  return (
+                    <TouchableOpacity
+                      key={d}
+                      style={[
+                        styles.groupChip,
+                        {
+                          borderColor: active ? colors.primary : colors.border,
+                          backgroundColor: active ? colors.primary : colors.inputBg,
+                        },
+                      ]}
+                      onPress={() => setAutoMinDiscount(d)}
+                    >
+                      <Text
+                        style={[
+                          styles.groupChipText,
+                          { color: active ? '#FFFFFF' : colors.text },
+                        ]}
+                      >
+                        {d}%+
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                <TextInput
+                  style={[
+                    styles.minutesInput,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor: colors.inputBg,
+                      color: colors.text,
+                    },
+                  ]}
+                  keyboardType="numeric"
+                  value={autoMinDiscount}
+                  onChangeText={setAutoMinDiscount}
+                  placeholder="%"
+                  placeholderTextColor={colors.textMuted}
+                />
+              </View>
+
+              <SelectDropdown
+                title="🎯 Escolher Nichos (pode marcar vários)"
+                placeholder="Selecione 1 ou mais nichos..."
+                multiSelect
+                options={NICHES.map((n) => ({
+                  id: n.id,
+                  label: `${n.icon} ${n.label}`,
+                }))}
+                selectedIds={autoNiches}
+                onChange={(ids) => setAutoNiches(ids as NicheId[])}
+              />
+
+              {settings && settings.whatsappAccounts.length > 0 ? (
+                <SelectDropdown
+                  title="📱 Escolher WhatsApps (pode marcar vários)"
+                  placeholder="Selecione 1 ou mais WhatsApps..."
+                  multiSelect
+                  options={settings.whatsappAccounts.map((acc) => ({
+                    id: acc.id,
+                    label: `📱 ${acc.label}`,
+                    subtitle: acc.phoneNumber,
+                  }))}
+                  selectedIds={autoWaIds}
+                  onChange={setAutoWaIds}
+                />
+              ) : null}
+
+              <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
+                📦 Quantidade de ofertas para agendar na fila:
+              </Text>
+              <View style={styles.groupsWrap}>
+                {['3', '5', '10'].map((q) => {
+                  const active = autoCount === q;
+                  return (
+                    <TouchableOpacity
+                      key={q}
+                      style={[
+                        styles.groupChip,
+                        {
+                          borderColor: active ? colors.primary : colors.border,
+                          backgroundColor: active ? colors.primary : colors.inputBg,
+                        },
+                      ]}
+                      onPress={() => setAutoCount(q)}
+                    >
+                      <Text
+                        style={[
+                          styles.groupChipText,
+                          { color: active ? '#FFFFFF' : colors.text },
+                        ]}
+                      >
+                        {q} ofertas
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={[styles.modalBtn, { backgroundColor: colors.save, marginTop: 8 }]}
+                onPress={handleConfirmAutopilot}
+                disabled={autoLoading}
+              >
+                {autoLoading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalBtnText}>
+                    ✅ Salvar e Ativar Piloto Automático
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.closeBtn}
+                onPress={() => setAutopilotOpen(false)}
+              >
+                <Text style={[styles.closeBtnText, { color: colors.textMuted }]}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
         </KeyboardAvoidingView>
       </Modal>
     </View>

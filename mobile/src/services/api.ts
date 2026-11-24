@@ -349,7 +349,9 @@ export const api = {
     niches: NicheId[],
     intervalMinutes = 30,
     minDiscount = 30,
-    count = 5
+    count = 5,
+    targetMode: 'groups' | 'status' | 'both' = 'both',
+    whatsappAccountIds: string[] = []
   ) =>
     request<{
       scheduledCount: number;
@@ -359,7 +361,14 @@ export const api = {
       minDiscount: number;
     }>('/api/automation/schedule/batch-by-niche', {
       method: 'POST',
-      body: JSON.stringify({ niches, intervalMinutes, minDiscount, count }),
+      body: JSON.stringify({
+        niches,
+        intervalMinutes,
+        minDiscount,
+        count,
+        targetMode,
+        whatsappAccountIds,
+      }),
     }),
 
   deleteScheduledPost: (id: string) =>
