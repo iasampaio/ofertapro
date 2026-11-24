@@ -50,9 +50,12 @@ export async function runContinuousAutopilotForUser(user: UserRecord): Promise<b
 
   if (cfg.targetMode === 'groups' || cfg.targetMode === 'both') {
     const groupChannels = userChannels.filter((c) => c.type !== 'whatsapp_status');
-    const matched = includesAll
-      ? groupChannels
-      : groupChannels.filter((c) => niches.includes(c.niche) || c.niche === 'todos');
+    const matched =
+      cfg.channelIds && cfg.channelIds.length > 0
+        ? groupChannels.filter((c) => cfg.channelIds!.includes(c.id))
+        : includesAll
+        ? groupChannels
+        : groupChannels.filter((c) => niches.includes(c.niche) || c.niche === 'todos');
     targetChannels.push(...matched);
   }
 

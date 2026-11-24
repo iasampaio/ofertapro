@@ -669,6 +669,7 @@ automationRouter.post('/schedule/batch-by-niche', async (req: AuthenticatedReque
         intervalMinutes: safeInterval,
         minDiscount: safeMinDiscount,
         targetMode,
+        channelIds: Array.isArray(channelIds) ? channelIds : [],
         whatsappAccountIds,
       },
       true

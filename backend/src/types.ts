@@ -137,6 +137,7 @@ export interface AutopilotConfig {
   intervalMinutes: number;
   minDiscount: number;
   targetMode: 'groups' | 'status' | 'both';
+  channelIds?: string[];
   whatsappAccountIds: string[];
 }
 

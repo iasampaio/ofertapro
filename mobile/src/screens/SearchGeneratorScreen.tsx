@@ -71,6 +71,7 @@ export function SearchGeneratorScreen({
   const [autopilotOpen, setAutopilotOpen] = useState(false);
   const [autoTargetMode, setAutoTargetMode] = useState<PostTargetMode>('both');
   const [autoNiches, setAutoNiches] = useState<NicheId[]>(['todos']);
+  const [autoChannelIds, setAutoChannelIds] = useState<string[]>([]);
   const [autoWaIds, setAutoWaIds] = useState<string[]>([]);
   const [autoInterval, setAutoInterval] = useState('30');
   const [autoMinDiscount, setAutoMinDiscount] = useState('5');
@@ -330,8 +331,25 @@ export function SearchGeneratorScreen({
       );
       return;
     }
-    setAutoNiches(selectedNiches.length > 0 ? selectedNiches : ['todos']);
-    setAutoWaIds((settings?.whatsappAccounts || []).map((a) => a.id));
+    setAutoNiches(
+      settings?.autopilotConfig?.niches?.length
+        ? settings.autopilotConfig.niches
+        : selectedNiches.length > 0
+        ? selectedNiches
+        : ['todos']
+    );
+    setAutoChannelIds(
+      settings?.autopilotConfig?.channelIds?.length
+        ? settings.autopilotConfig.channelIds
+        : (settings?.channels || [])
+            .filter((c) => c.enabled && c.type !== 'whatsapp_status')
+            .map((c) => c.id)
+    );
+    setAutoWaIds(
+      settings?.autopilotConfig?.whatsappAccountIds?.length
+        ? settings.autopilotConfig.whatsappAccountIds
+        : (settings?.whatsappAccounts || []).map((a) => a.id)
+    );
     setAutopilotOpen(true);
   }
 
@@ -349,7 +367,8 @@ export function SearchGeneratorScreen({
         minDiscount,
         count,
         autoTargetMode,
-        autoWaIds
+        autoWaIds,
+        autoChannelIds
       );
       setAutopilotOpen(false);
       onRefreshSettings();
@@ -897,18 +916,37 @@ export function SearchGeneratorScreen({
                 onChange={(ids) => setAutoNiches(ids as NicheId[])}
               />
 
-              {settings && settings.whatsappAccounts.length > 0 ? (
+              {autoTargetMode === 'groups' || autoTargetMode === 'both' ? (
                 <SelectDropdown
-                  title="📱 Escolher WhatsApps (pode marcar vários)"
-                  placeholder="Selecione 1 ou mais WhatsApps..."
+                  title="👥 Escolher Grupos do Piloto (pode marcar vários)"
+                  placeholder="Selecione os grupos..."
                   multiSelect
-                  options={settings.whatsappAccounts.map((acc) => ({
+                  options={(settings?.channels || [])
+                    .filter((c) => c.type !== 'whatsapp_status')
+                    .map((ch) => ({
+                      id: ch.id,
+                      label: ch.name,
+                      subtitle: `Nicho: ${NICHES.find((n) => n.id === ch.niche)?.label || 'Todos'}`,
+                    }))}
+                  selectedIds={autoChannelIds}
+                  onChange={setAutoChannelIds}
+                  emptyMessage="Nenhum grupo salvo ainda — busque seus grupos na aba ⚙️ Canais."
+                />
+              ) : null}
+
+              {autoTargetMode === 'status' || autoTargetMode === 'both' ? (
+                <SelectDropdown
+                  title="🟢 Escolher Status de quais WhatsApps (pode marcar vários)"
+                  placeholder="Selecione 1 ou mais WhatsApps para Status..."
+                  multiSelect
+                  options={(settings?.whatsappAccounts || []).map((acc) => ({
                     id: acc.id,
-                    label: `📱 ${acc.label}`,
+                    label: `📱 Status — ${acc.label}`,
                     subtitle: acc.phoneNumber,
                   }))}
                   selectedIds={autoWaIds}
                   onChange={setAutoWaIds}
+                  emptyMessage="Nenhum WhatsApp conectado — conecte seu número na aba ⚙️ Canais."
                 />
               ) : null}
 

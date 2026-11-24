@@ -116,6 +116,7 @@ export interface AutopilotConfig {
   intervalMinutes: number;
   minDiscount: number;
   targetMode: 'groups' | 'status' | 'both';
+  channelIds?: string[];
   whatsappAccountIds: string[];
 }
 
@@ -378,10 +379,11 @@ export const api = {
   scheduleBatchByNiche: (
     niches: NicheId[],
     intervalMinutes = 30,
-    minDiscount = 30,
+    minDiscount = 5,
     count = 5,
     targetMode: 'groups' | 'status' | 'both' = 'both',
-    whatsappAccountIds: string[] = []
+    whatsappAccountIds: string[] = [],
+    channelIds: string[] = []
   ) =>
     request<{
       scheduledCount: number;
@@ -398,6 +400,7 @@ export const api = {
         count,
         targetMode,
         whatsappAccountIds,
+        channelIds,
       }),
     }),
 
