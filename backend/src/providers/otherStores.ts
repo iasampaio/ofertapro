@@ -241,26 +241,75 @@ interface MLSearchItem {
   sold_quantity?: number;
 }
 
+let cachedMlToken: { token: string; expiresAt: number } | null = null;
+
+async function getMercadoLivreAccessToken(): Promise<string | null> {
+  if (process.env.MERCADOLIVRE_ACCESS_TOKEN) {
+    return process.env.MERCADOLIVRE_ACCESS_TOKEN.trim();
+  }
+
+  const clientId = (process.env.MERCADOLIVRE_CLIENT_ID || '').trim();
+  const clientSecret = (process.env.MERCADOLIVRE_CLIENT_SECRET || '').trim();
+  if (!clientId || !clientSecret) return null;
+
+  if (cachedMlToken && cachedMlToken.expiresAt > Date.now()) {
+    return cachedMlToken.token;
+  }
+
+  const body = new URLSearchParams({
+    grant_type: 'client_credentials',
+    client_id: clientId,
+    client_secret: clientSecret,
+  });
+
+  const res = await fetch('https://api.mercadolibre.com/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Mercado Livre OAuth HTTP ${res.status}`);
+  }
+
+  const data = (await res.json()) as { access_token: string; expires_in?: number };
+  cachedMlToken = {
+    token: data.access_token,
+    expiresAt: Date.now() + ((data.expires_in || 21600) - 300) * 1000,
+  };
+  return cachedMlToken.token;
+}
+
 async function fetchMercadoLivreLive(
   keyword: string,
   niche: NicheId,
   affiliateTag: string
 ): Promise<Offer[]> {
   const q = keyword.trim() || ML_NICHE_QUERIES[niche] || 'oferta';
+  const offset = Math.floor(Math.random() * 20);
   const url = `https://api.mercadolibre.com/sites/MLB/search?q=${encodeURIComponent(
     q
-  )}&limit=12`;
+  )}&offset=${offset}&limit=12`;
 
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
-      Accept: 'application/json',
-    },
-  });
+  const headers: Record<string, string> = {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+    Accept: 'application/json',
+  };
+
+  const token = await getMercadoLivreAccessToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const res = await fetch(url, { headers });
 
   if (!res.ok) {
-    throw new Error(`Mercado Livre HTTP ${res.status}`);
+    throw new Error(
+      `Mercado Livre HTTP ${res.status}${
+        !token ? ' (configure MERCADOLIVRE_CLIENT_ID e MERCADOLIVRE_CLIENT_SECRET no Render)' : ''
+      }`
+    );
   }
 
   const json = (await res.json()) as { results?: MLSearchItem[] };

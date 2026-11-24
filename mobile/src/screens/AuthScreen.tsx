@@ -26,7 +26,7 @@ interface AuthScreenProps {
 
 export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const { colors } = useTheme();
-  const [mode, setMode] = useState<'login' | 'register'>('register');
+  const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -179,7 +179,10 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           />
 
           <TouchableOpacity
-            style={[styles.submitBtn, { backgroundColor: colors.save }]}
+            style={[
+              styles.submitBtn,
+              { backgroundColor: mode === 'login' ? colors.primary : colors.save },
+            ]}
             onPress={handleSubmit}
             disabled={loading}
           >

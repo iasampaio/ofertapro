@@ -14,10 +14,9 @@ function buildShopeeAuthHeader(appId: string, appSecret: string, payload: string
 async function callShopeeGraphQL<T>(
   appId: string,
   appSecret: string,
-  query: string,
-  variables: Record<string, unknown> = {}
+  query: string
 ): Promise<T> {
-  const payload = JSON.stringify({ query, variables });
+  const payload = JSON.stringify({ query });
   const authorization = buildShopeeAuthHeader(appId, appSecret, payload);
 
   const response = await fetch(SHOPEE_GRAPHQL_URL, {
@@ -269,14 +268,39 @@ export async function searchShopeeOffers(
   ];
 
   try {
-    const randomPage = Math.floor(Math.random() * 4) + 1; // Páginas 1 a 4 para sempre trazer ofertas novas ao atualizar
+    const randomPage = Math.floor(Math.random() * 3) + 1;
     const searchTerm =
       effectiveKeyword ||
       SHOWCASE_KEYWORDS[Math.floor(Math.random() * SHOWCASE_KEYWORDS.length)];
 
-    const query = `
-      query SearchOffers($keyword: String, $page: Int, $limit: Int) {
-        productOfferV2(keyword: $keyword, sortType: 2, page: $page, limit: $limit) {
+    const buildQuery = (term: string, pageNum: number) => `{
+      productOfferV2(keyword: ${JSON.stringify(term)}, sortType: 2, page: ${pageNum}, limit: ${limit}) {
+        nodes {
+          itemId
+          productName
+          priceMin
+          priceMax
+          priceDiscountRate
+          commissionRate
+          imageUrl
+          productLink
+          offerLink
+          ratingStar
+          sales
+          shopName
+        }
+      }
+    }`;
+
+    const data = await callShopeeGraphQL<{
+      productOfferV2: { nodes: ShopeeProductNode[] };
+    }>(appId, appSecret, buildQuery(searchTerm, randomPage));
+
+    let nodes = data.productOfferV2?.nodes || [];
+
+    if (nodes.length === 0) {
+      const topQuery = `{
+        productOfferV2(listType: 2, sortType: 2, page: 1, limit: ${limit}) {
           nodes {
             itemId
             productName
@@ -292,28 +316,10 @@ export async function searchShopeeOffers(
             shopName
           }
         }
-      }
-    `;
-
-    const data = await callShopeeGraphQL<{
-      productOfferV2: { nodes: ShopeeProductNode[] };
-    }>(appId, appSecret, query, {
-      keyword: searchTerm,
-      page: randomPage,
-      limit,
-    });
-
-    let nodes = data.productOfferV2?.nodes || [];
-
-    // Se a página aleatória veio vazia, tenta página 1 com o mesmo termo
-    if (nodes.length === 0 && randomPage > 1) {
+      }`;
       const retryData = await callShopeeGraphQL<{
         productOfferV2: { nodes: ShopeeProductNode[] };
-      }>(appId, appSecret, query, {
-        keyword: searchTerm,
-        page: 1,
-        limit,
-      });
+      }>(appId, appSecret, topQuery);
       nodes = retryData.productOfferV2?.nodes || [];
     }
 
@@ -372,17 +378,15 @@ export async function generateShopeeShortLink(
     };
   }
 
-  const mutation = `
-    mutation GenerateShortLink($originUrl: String!, $subIds: [String!]) {
-      generateShortLink(input: { originUrl: $originUrl, subIds: $subIds }) {
-        shortLink
-      }
+  const mutation = `mutation {
+    generateShortLink(input: { originUrl: ${JSON.stringify(originUrl)}, subIds: ${JSON.stringify(subIds)} }) {
+      shortLink
     }
-  `;
+  }`;
 
   const data = await callShopeeGraphQL<{
     generateShortLink: { shortLink: string };
-  }>(appId, appSecret, mutation, { originUrl, subIds });
+  }>(appId, appSecret, mutation);
 
   return {
     shortLink: data.generateShortLink.shortLink,

@@ -145,9 +145,49 @@ function MainApp() {
     closeDrawer();
   }
 
-  const requiresLogin = activeScreen !== 'showcase' && !user;
   const currentMenuItem = MENU_ITEMS.find((m) => m.key === activeScreen);
   const userInitial = user?.name ? user.name.trim().charAt(0).toUpperCase() : 'O';
+
+  // Abre de primeira na tela de Login/Cadastro quando não está logado
+  if (!user) {
+    return (
+      <SafeAreaView
+        style={[styles.safe, { backgroundColor: colors.background }]}
+        edges={['top', 'bottom']}
+      >
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <View
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'flex-end',
+            paddingHorizontal: 16,
+            paddingTop: 10,
+          }}
+        >
+          <TouchableOpacity
+            activeOpacity={0.75}
+            style={[styles.themeBtn, { backgroundColor: colors.primarySoft }]}
+            onPress={toggleTheme}
+          >
+            <Ionicons
+              name={isDark ? 'sunny-outline' : 'moon-outline'}
+              size={16}
+              color={colors.primaryDark}
+            />
+            <Text style={[styles.themeBtnText, { color: colors.primaryDark }]}>
+              {isDark ? 'Claro' : 'Escuro'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        <AuthScreen
+          onAuthenticated={(loggedUser) => {
+            setUser(loggedUser);
+            setActiveScreen('showcase');
+          }}
+        />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView
@@ -206,38 +246,29 @@ function MainApp() {
 
       {/* Conteúdo Principal */}
       <View style={styles.content}>
-        {activeScreen === 'showcase' ? (
+        {activeScreen === 'showcase' && (
           <ShowcaseScreen isPro={settings?.plan === 'pro'} />
-        ) : requiresLogin ? (
-          <AuthScreen
-            onAuthenticated={(loggedUser) => {
-              setUser(loggedUser);
-            }}
+        )}
+        {activeScreen === 'automation' && (
+          <SearchGeneratorScreen
+            settings={settings}
+            onRefreshSettings={refreshSettings}
+            onOpenPro={() => setActiveScreen('pro')}
           />
-        ) : (
-          <>
-            {activeScreen === 'automation' && (
-              <SearchGeneratorScreen
-                settings={settings}
-                onRefreshSettings={refreshSettings}
-                onOpenPro={() => setActiveScreen('pro')}
-              />
-            )}
-            {activeScreen === 'scheduler' && <SchedulerScreen />}
-            {activeScreen === 'channels' && (
-              <ChannelsScreen
-                settings={settings}
-                onRefreshSettings={refreshSettings}
-                onOpenPro={() => setActiveScreen('pro')}
-              />
-            )}
-            {activeScreen === 'pro' && (
-              <ProPlanScreen
-                currentPlan={settings?.plan || 'free'}
-                onPlanChanged={refreshSettings}
-              />
-            )}
-          </>
+        )}
+        {activeScreen === 'scheduler' && <SchedulerScreen />}
+        {activeScreen === 'channels' && (
+          <ChannelsScreen
+            settings={settings}
+            onRefreshSettings={refreshSettings}
+            onOpenPro={() => setActiveScreen('pro')}
+          />
+        )}
+        {activeScreen === 'pro' && (
+          <ProPlanScreen
+            currentPlan={settings?.plan || 'free'}
+            onPlanChanged={refreshSettings}
+          />
         )}
       </View>
 
