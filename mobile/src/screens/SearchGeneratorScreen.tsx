@@ -520,9 +520,33 @@ export function SearchGeneratorScreen({
               />
             ) : null}
 
-            <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
-              Legenda pronta (editável):
-            </Text>
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 6,
+              }}
+            >
+              <Text style={[styles.modalLabel, { color: colors.textMuted, marginBottom: 0 }]}>
+                Legenda pronta (editável):
+              </Text>
+              <TouchableOpacity
+                onPress={async () => {
+                  if (!selectedOffer) return;
+                  try {
+                    const res = await api.generateCopy(selectedOffer);
+                    setCaption(res.caption);
+                  } catch {
+                    // mantém a atual
+                  }
+                }}
+              >
+                <Text style={{ color: colors.primary, fontWeight: '800', fontSize: 12 }}>
+                  🎲 Gerar outra frase
+                </Text>
+              </TouchableOpacity>
+            </View>
             <TextInput
               style={[
                 styles.captionInput,
