@@ -18,6 +18,82 @@ function getApiKey(): string {
   return (process.env.LOMADEE_APP_TOKEN || process.env.LOMADEE_API_KEY || '').trim();
 }
 
+let cachedChannelId: string | null = null;
+const shortLinkCache = new Map<string, string>();
+
+async function getLomadeeChannelId(apiKey: string): Promise<string | null> {
+  if (process.env.LOMADEE_CHANNEL_ID) {
+    return process.env.LOMADEE_CHANNEL_ID.trim();
+  }
+  if (cachedChannelId) return cachedChannelId;
+
+  try {
+    const res = await fetch(`${LOMADEE_BASE_URL}/affiliate/channels?page=1&limit=10`, {
+      headers: { Accept: 'application/json', 'x-api-key': apiKey },
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const list = extractArray(json);
+    const first = list[0];
+    const id = first?.id || first?.channelId || null;
+    if (id) {
+      cachedChannelId = String(id);
+      return cachedChannelId;
+    }
+  } catch {
+    // ignora
+  }
+  return null;
+}
+
+export async function shortenLomadeeUrl(targetUrl: string): Promise<string> {
+  const apiKey = getApiKey();
+  if (!apiKey || !targetUrl) return targetUrl;
+
+  const cached = shortLinkCache.get(targetUrl);
+  if (cached) return cached;
+
+  try {
+    const channelId = await getLomadeeChannelId(apiKey);
+    const bodyPayload: Record<string, string> = { url: targetUrl };
+    if (channelId) {
+      bodyPayload.channelId = channelId;
+    }
+
+    const res = await fetch(`${LOMADEE_BASE_URL}/affiliate/shortener/url`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+      },
+      body: JSON.stringify(bodyPayload),
+    });
+
+    if (!res.ok) return targetUrl;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const json = (await res.json()) as any;
+    const shortUrl = String(
+      json?.shortUrl ||
+        json?.shortLink ||
+        json?.data?.shortUrl ||
+        json?.data?.shortLink ||
+        json?.data?.url ||
+        json?.url ||
+        ''
+    ).trim();
+
+    if (shortUrl && shortUrl.startsWith('http')) {
+      shortLinkCache.set(targetUrl, shortUrl);
+      return shortUrl;
+    }
+  } catch {
+    // Fallback seguro para URL original
+  }
+  return targetUrl;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractArray(json: any): any[] {
   if (Array.isArray(json)) return json;
@@ -207,7 +283,15 @@ export async function searchLomadeeOffers(
       };
     }
 
-    return { offers, mode: 'live' };
+    // Converte os links das ofertas em links curtos rastreados de comissão da Lomadee (com cache)
+    const trackedOffers = await Promise.all(
+      offers.map(async (offer) => ({
+        ...offer,
+        affiliateUrl: await shortenLomadeeUrl(offer.affiliateUrl),
+      }))
+    );
+
+    return { offers: trackedOffers, mode: 'live' };
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Erro na Lomadee API';
     console.warn('[LomadeeAPI] Erro:', msg);
