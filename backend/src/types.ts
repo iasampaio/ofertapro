@@ -132,6 +132,14 @@ export interface CopyTemplate {
   body: string;
 }
 
+export interface AutopilotConfig {
+  niches: NicheId[];
+  intervalMinutes: number;
+  minDiscount: number;
+  targetMode: 'groups' | 'status' | 'both';
+  whatsappAccountIds: string[];
+}
+
 export interface UserSettings {
   plan: 'free' | 'pro';
   dailyPostsLimit: number;

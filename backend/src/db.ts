@@ -3,6 +3,7 @@ import path from 'path';
 import { v4 as uuid } from 'uuid';
 import {
   AffiliateCredentials,
+  AutopilotConfig,
   CopyTemplate,
   DistributionChannel,
   NicheId,
@@ -114,6 +115,21 @@ try {
 } catch {
   // Coluna já existe
 }
+try {
+  db.exec(`ALTER TABLE users ADD COLUMN autopilot_config_json TEXT;`);
+} catch {
+  // Coluna já existe
+}
+try {
+  db.exec(`ALTER TABLE users ADD COLUMN autopilot_last_run TEXT;`);
+} catch {
+  // Coluna já existe
+}
+try {
+  db.exec(`ALTER TABLE users ADD COLUMN autopilot_posted_ids_json TEXT NOT NULL DEFAULT '[]';`);
+} catch {
+  // Coluna já existe
+}
 
 export const DEFAULT_TEMPLATES: CopyTemplate[] = [
   {
@@ -153,6 +169,9 @@ export interface UserRecord {
   passwordHash: string;
   plan: 'free' | 'pro';
   autopilotEnabled: boolean;
+  autopilotConfig: AutopilotConfig | null;
+  autopilotLastRun: string | null;
+  autopilotPostedIds: string[];
   dailyPostsLimit: number;
   postsUsedToday: number;
   lastUsageDate: string;
@@ -166,6 +185,23 @@ function todayIsoDate(): string {
 }
 
 function mapUserRow(row: Record<string, unknown>): UserRecord {
+  let autopilotConfig: AutopilotConfig | null = null;
+  if (row.autopilot_config_json) {
+    try {
+      autopilotConfig = JSON.parse(String(row.autopilot_config_json)) as AutopilotConfig;
+    } catch {
+      autopilotConfig = null;
+    }
+  }
+  let autopilotPostedIds: string[] = [];
+  if (row.autopilot_posted_ids_json) {
+    try {
+      autopilotPostedIds = JSON.parse(String(row.autopilot_posted_ids_json)) as string[];
+    } catch {
+      autopilotPostedIds = [];
+    }
+  }
+
   return {
     id: String(row.id),
     name: String(row.name),
@@ -173,6 +209,9 @@ function mapUserRow(row: Record<string, unknown>): UserRecord {
     passwordHash: String(row.password_hash),
     plan: row.plan === 'pro' ? 'pro' : 'free',
     autopilotEnabled: Number(row.autopilot_enabled) === 1,
+    autopilotConfig,
+    autopilotLastRun: row.autopilot_last_run ? String(row.autopilot_last_run) : null,
+    autopilotPostedIds,
     dailyPostsLimit: Number(row.daily_posts_limit) || 5,
     postsUsedToday: Number(row.posts_used_today) || 0,
     lastUsageDate: String(row.last_usage_date),
@@ -263,6 +302,30 @@ export const dbStore = {
       enabled ? 1 : 0,
       userId
     );
+  },
+
+  saveAutopilotConfig(userId: string, config: AutopilotConfig, enable = true): void {
+    db.prepare(
+      'UPDATE users SET autopilot_config_json = ?, autopilot_enabled = ? WHERE id = ?'
+    ).run(JSON.stringify(config), enable ? 1 : 0, userId);
+  },
+
+  listAutopilotActiveUsers(): UserRecord[] {
+    const rows = db
+      .prepare(
+        `SELECT * FROM users WHERE plan = 'pro' AND autopilot_enabled = 1 AND autopilot_config_json IS NOT NULL`
+      )
+      .all();
+    return rows.map((r) => resetDailyCounterIfNeeded(mapUserRow(r)));
+  },
+
+  recordAutopilotRun(userId: string, offerId: string): void {
+    const user = this.getUserById(userId);
+    const prevIds = user?.autopilotPostedIds || [];
+    const nextIds = [...prevIds.filter((id) => id !== offerId), offerId].slice(-60);
+    db.prepare(
+      'UPDATE users SET autopilot_last_run = ?, autopilot_posted_ids_json = ? WHERE id = ?'
+    ).run(new Date().toISOString(), JSON.stringify(nextIds), userId);
   },
 
   canPublishMore(user: UserRecord): boolean {

@@ -297,8 +297,8 @@ export function SearchGeneratorScreen({
           ? 'Grupos'
           : 'Grupos + Status do WhatsApp';
       Alert.alert(
-        'Piloto Automático Ativado ⚡',
-        `${res.scheduledCount} oferta(s) de ${chosenNiches.length} nicho(s) (${res.minDiscount}%+ OFF) agendadas de ${res.intervalMinutes} em ${res.intervalMinutes} min (08h–22h) para ${targetDesc}!`
+        'Piloto Automático Contínuo Ativado ♾️',
+        `Configurado! Vai postar todos os dias de 08h às 22h (Brasília), de ${res.intervalMinutes} em ${res.intervalMinutes} min, ofertas com ${res.minDiscount}%+ OFF em ${targetDesc} — sem parar até você desligar!`
       );
     } catch (err: any) {
       if (err?.code === 'PRO_REQUIRED') {
@@ -376,7 +376,9 @@ export function SearchGeneratorScreen({
               : '⚪ Piloto Automático DESATIVADO'}
           </Text>
           <Text style={[styles.autopilotBarSub, { color: colors.textMuted }]}>
-            Disparos automáticos apenas de 08h às 22h (Brasília)
+            {settings?.autopilotConfig
+              ? `♾️ A cada ${settings.autopilotConfig.intervalMinutes} min • ${settings.autopilotConfig.minDiscount}%+ OFF • 08h–22h`
+              : 'Disparos contínuos todos os dias de 08h às 22h (Brasília)'}
           </Text>
         </View>
         <Switch
@@ -804,40 +806,28 @@ export function SearchGeneratorScreen({
                 />
               ) : null}
 
-              <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
-                📦 Quantidade de ofertas para agendar na fila:
-              </Text>
-              <View style={styles.groupsWrap}>
-                {['3', '5', '10'].map((q) => {
-                  const active = autoCount === q;
-                  return (
-                    <TouchableOpacity
-                      key={q}
-                      style={[
-                        styles.groupChip,
-                        {
-                          borderColor: active ? colors.primary : colors.border,
-                          backgroundColor: active ? colors.primary : colors.inputBg,
-                        },
-                      ]}
-                      onPress={() => setAutoCount(q)}
-                    >
-                      <Text
-                        style={[
-                          styles.groupChipText,
-                          { color: active ? '#FFFFFF' : colors.text },
-                        ]}
-                      >
-                        {q} ofertas
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+              <View
+                style={{
+                  backgroundColor: colors.primarySoft,
+                  borderRadius: 10,
+                  padding: 10,
+                  marginBottom: 8,
+                }}
+              >
+                <Text
+                  style={{
+                    color: colors.primaryDark,
+                    fontSize: 12,
+                    fontWeight: '700',
+                  }}
+                >
+                  ♾️ Modo Contínuo Automático: posta ofertas novas todos os dias de 08h às 22h (Brasília), sem repetir produtos, até você desligar o botão!
+                </Text>
               </View>
 
               <TouchableOpacity
                 activeOpacity={0.8}
-                style={[styles.modalBtn, { backgroundColor: colors.save, marginTop: 8 }]}
+                style={[styles.modalBtn, { backgroundColor: colors.save, marginTop: 4 }]}
                 onPress={handleConfirmAutopilot}
                 disabled={autoLoading}
               >

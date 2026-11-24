@@ -111,10 +111,20 @@ export interface AuthUser {
   plan?: 'free' | 'pro';
 }
 
+export interface AutopilotConfig {
+  niches: NicheId[];
+  intervalMinutes: number;
+  minDiscount: number;
+  targetMode: 'groups' | 'status' | 'both';
+  whatsappAccountIds: string[];
+}
+
 export interface AutomationSettings {
   user?: AuthUser;
   plan: 'free' | 'pro';
   autopilotEnabled: boolean;
+  autopilotConfig?: AutopilotConfig | null;
+  autopilotLastRun?: string | null;
   dailyPostsLimit: number;
   postsUsedToday: number;
   credentials: {

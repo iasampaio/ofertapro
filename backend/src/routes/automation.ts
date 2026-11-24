@@ -5,8 +5,9 @@ import { searchOffersAcrossStores } from '../providers';
 import { renderOfferCaption, renderStatusCaption } from '../services/copyGenerator';
 import { dispatchToChannels, sendWhatsAppStatus } from '../services/dispatcher';
 import {
-  clampToBusinessHours,
+  isWithinBrazilBusinessHours,
   processDueScheduledPosts,
+  runContinuousAutopilotForUser,
 } from '../services/scheduler';
 import {
   isBaileysConnected,
@@ -43,6 +44,8 @@ automationRouter.get('/settings', (req: AuthenticatedRequest, res) => {
     user: { id: user.id, name: user.name, email: user.email },
     plan: user.plan,
     autopilotEnabled: user.autopilotEnabled,
+    autopilotConfig: user.autopilotConfig,
+    autopilotLastRun: user.autopilotLastRun,
     dailyPostsLimit: user.dailyPostsLimit,
     postsUsedToday: user.postsUsedToday,
     credentials: {
@@ -615,66 +618,38 @@ automationRouter.post('/schedule/batch-by-niche', async (req: AuthenticatedReque
       return;
     }
 
-    const safeMinDiscount = Math.max(0, Math.min(95, Number(minDiscount) || 0));
+    const safeMinDiscount = Math.max(0, Math.min(95, Number(minDiscount) || 5));
     const safeInterval = Math.max(1, Math.min(1440, Number(intervalMinutes) || 30));
-    const maxToSchedule = Math.max(1, Math.min(Number(count) || 5, 20));
 
-    // Busca ofertas em todos os nichos escolhidos e remove duplicadas
-    const nichesToQuery: NicheId[] = includesAll ? ['todos'] : chosenNiches;
-    const allResults = await Promise.all(
-      nichesToQuery.map((n) =>
-        searchOffersAcrossStores(
-          '',
-          ['shopee', 'mercadolivre', 'amazon', 'aliexpress'],
-          user.credentials,
-          n
-        )
-      )
+    // Salva a configuração CONTÍNUA do Piloto Automático (roda todos os dias de 08h às 22h sem parar!)
+    dbStore.saveAutopilotConfig(
+      user.id,
+      {
+        niches: chosenNiches,
+        intervalMinutes: safeInterval,
+        minDiscount: safeMinDiscount,
+        targetMode,
+        whatsappAccountIds,
+      },
+      true
     );
 
-    const uniqueMap = new Map<string, Offer>();
-    for (const r of allResults) {
-      for (const o of r.offers) {
-        uniqueMap.set(o.id, o);
-      }
+    // Se já estiver dentro da janela 08h–22h (Brasília), já dispara a 1ª oferta imediatamente!
+    const refreshedUser = dbStore.getUserById(user.id)!;
+    let postedFirstNow = false;
+    if (isWithinBrazilBusinessHours()) {
+      postedFirstNow = await runContinuousAutopilotForUser(refreshedUser).catch(() => false);
     }
-
-    const filteredOffers = Array.from(uniqueMap.values())
-      .filter((o) => o.discountPercent >= safeMinDiscount)
-      .sort((a, b) => b.discountPercent - a.discountPercent);
-
-    if (filteredOffers.length === 0) {
-      res.status(400).json({
-        error: `Nenhuma oferta encontrada nesses nichos com desconto mínimo de ${safeMinDiscount}% OFF. Tente baixar um pouco o desconto mínimo.`,
-      });
-      return;
-    }
-
-    const offers = filteredOffers.slice(0, maxToSchedule);
-    const template =
-      DEFAULT_TEMPLATES.find((t) => t.id === user.activeTemplateId) || DEFAULT_TEMPLATES[0];
-
-    // Ativa o Piloto Automático automaticamente ao confirmar a configuração
-    dbStore.setAutopilotEnabled(user.id, true);
-
-    const created = offers.map((offer, idx) => {
-      const rawDate = new Date(Date.now() + (idx + 1) * safeInterval * 60 * 1000);
-      const scheduledFor = clampToBusinessHours(rawDate).toISOString();
-      return dbStore.addScheduledPost(user.id, {
-        offer,
-        caption: renderOfferCaption(offer, template),
-        channelIds: matchingChannels.map((c) => c.id),
-        scheduledFor,
-      });
-    });
 
     res.status(201).json({
-      scheduledCount: created.length,
+      continuous: true,
+      postedFirstNow,
+      withinBusinessHours: isWithinBrazilBusinessHours(),
+      scheduledCount: 1,
       channelsCount: matchingChannels.length,
       nichesCount: chosenNiches.length,
       intervalMinutes: safeInterval,
       minDiscount: safeMinDiscount,
-      posts: created,
     });
   } catch (err) {
     res.status(500).json({
