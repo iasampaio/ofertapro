@@ -239,11 +239,11 @@ export async function sendBaileysImage(
   }
 
   if (jid === 'status@broadcast') {
-    // No Baileys v6, `statusJidList` é OBRIGATÓRIO para o Status aparecer no seu celular e nos contatos!
     const myRawId = entry.sock.user?.id || '';
-    const myJid = myRawId
-      ? `${myRawId.split(':')[0].split('@')[0]}@s.whatsapp.net`
-      : `${phoneNumber.replace(/\D/g, '')}@s.whatsapp.net`;
+    const myDigits = myRawId
+      ? myRawId.split(':')[0].split('@')[0].replace(/\D/g, '')
+      : phoneNumber.replace(/\D/g, '');
+    const myJid = `${myDigits}@s.whatsapp.net`;
 
     const statusJidSet = new Set<string>([myJid]);
     try {
@@ -253,7 +253,7 @@ export async function sendBaileysImage(
       >;
       for (const g of Object.values(groupsObj)) {
         for (const p of g.participants || []) {
-          if (p.id && p.id.endsWith('@s.whatsapp.net')) {
+          if (p.id && /^\d+@s\.whatsapp\.net$/.test(p.id)) {
             statusJidSet.add(p.id);
           }
         }
@@ -262,22 +262,38 @@ export async function sendBaileysImage(
       // Mesmo sem grupos, o próprio número já garante exibição no Status
     }
 
+    const statusJidList = Array.from(statusJidSet).slice(0, 300);
+    const shortCaption = caption.slice(0, 650);
+
+    console.log(
+      `[Baileys] Postando Status para ${statusJidList.length} JIDs (myJid=${myJid}, isBuffer=${Buffer.isBuffer(
+        imagePayload
+      )})`
+    );
+
     await entry.sock.sendMessage(
       'status@broadcast',
-      { image: imagePayload, caption },
       {
-        broadcast: true,
-        statusJidList: Array.from(statusJidSet).slice(0, 500),
+        image: imagePayload,
+        mimetype: 'image/jpeg',
+        caption: shortCaption,
+      },
+      {
+        statusJidList,
+        backgroundColor: '#7C3AED',
+        font: 1,
       }
     );
+
     return {
       success: true,
-      message: `Publicado no Status do WhatsApp com foto (${statusJidSet.size} destinatário(s))!`,
+      message: `Publicado no Status do WhatsApp com foto (${statusJidList.length} contato(s))!`,
     };
   }
 
   await entry.sock.sendMessage(jid, {
     image: imagePayload,
+    mimetype: 'image/jpeg',
     caption,
   });
 

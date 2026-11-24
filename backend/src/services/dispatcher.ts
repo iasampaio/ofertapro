@@ -1,4 +1,5 @@
 import { DistributionChannel, Offer, WhatsAppAccount } from '../types';
+import { renderStatusCaption } from './copyGenerator';
 import { sendBaileysImage } from './whatsappBaileys';
 
 export interface DispatchResult {
@@ -270,7 +271,16 @@ export async function dispatchToChannels(
   caption: string,
   whatsappAccounts: WhatsAppAccount[] = []
 ): Promise<DispatchResult[]> {
-  const enabledChannels = channels.filter((c) => c.enabled);
+  // Remove duplicados pelo mesmo destino (ex: mesmo grupo salvo em vários nichos) — NUNCA posta 2x/3x no mesmo grupo!
+  const seenTargets = new Set<string>();
+  const enabledChannels = channels.filter((c) => {
+    if (!c.enabled) return false;
+    const dedupeKey = `${c.type}:${c.whatsappAccountId || 'default'}:${c.targetId}`;
+    if (seenTargets.has(dedupeKey)) return false;
+    seenTargets.add(dedupeKey);
+    return true;
+  });
+
   if (enabledChannels.length === 0) {
     return [
       {
@@ -302,7 +312,9 @@ export async function dispatchToChannels(
               message: 'Conecte um WhatsApp na aba Canais para postar no Status.',
             };
           }
-          return await sendWhatsAppStatus(account, offer, caption);
+          // Status usa legenda curta otimizada (dentro do limite de caracteres do WhatsApp Status)
+          const statusCaption = renderStatusCaption(offer);
+          return await sendWhatsAppStatus(account, offer, statusCaption);
         }
 
         if (account) {

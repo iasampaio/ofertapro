@@ -179,10 +179,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           />
 
           <TouchableOpacity
-            style={[
-              styles.submitBtn,
-              { backgroundColor: mode === 'login' ? colors.primary : colors.save },
-            ]}
+            style={[styles.submitBtn, { backgroundColor: colors.primary }]}
             onPress={handleSubmit}
             disabled={loading}
           >
