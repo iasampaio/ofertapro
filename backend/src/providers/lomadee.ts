@@ -98,33 +98,85 @@ export async function searchLomadeeOffers(
     const offers: Offer[] = items
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .map((item: any, idx: number): Offer | null => {
-        const title = String(item.name || item.title || '').trim();
-        const price = Number(
-          item.price ?? item.salePrice ?? item.pricing?.price ?? item.value ?? 0
-        );
-        const orig = Number(
-          item.originalPrice ?? item.priceFrom ?? item.listPrice ?? item.pricing?.listPrice ?? 0
-        );
-        const link = String(
-          item.affiliateUrl || item.shortUrl || item.link || item.url || ''
+        const firstOpt = Array.isArray(item.options) ? item.options[0] : null;
+        const firstOffer = Array.isArray(item.offers) ? item.offers[0] : null;
+        const firstPricing = Array.isArray(firstOpt?.pricing)
+          ? firstOpt.pricing[0]
+          : firstOpt?.pricing || item.pricing || firstOffer?.pricing;
+
+        const title = String(
+          item.name || item.title || firstOpt?.name || firstOffer?.name || ''
         ).trim();
+
+        const rawPrice =
+          item.price ??
+          item.salePrice ??
+          firstPricing?.price ??
+          firstPricing?.salePrice ??
+          firstOpt?.price ??
+          firstOffer?.price ??
+          item.value ??
+          0;
+        const price = Number(
+          typeof rawPrice === 'string' ? rawPrice.replace(',', '.') : rawPrice
+        );
+
+        const rawOrig =
+          item.originalPrice ??
+          item.priceFrom ??
+          item.listPrice ??
+          firstPricing?.listPrice ??
+          firstPricing?.originalPrice ??
+          firstPricing?.priceFrom ??
+          firstOpt?.listPrice ??
+          firstOffer?.priceFrom ??
+          0;
+        const orig = Number(
+          typeof rawOrig === 'string' ? rawOrig.replace(',', '.') : rawOrig
+        );
+
+        const link = String(
+          item.affiliateUrl ||
+            item.shortUrl ||
+            item.redirectUrl ||
+            item.destinationUrl ||
+            item.productUrl ||
+            item.link ||
+            item.url ||
+            firstOpt?.affiliateUrl ||
+            firstOpt?.link ||
+            firstOpt?.url ||
+            firstOffer?.link ||
+            firstOffer?.url ||
+            ''
+        ).trim();
+
         const imageUrl = String(
           item.image ||
             item.imageUrl ||
             item.thumbnail ||
+            firstOpt?.image ||
+            firstOpt?.thumbnail ||
             (Array.isArray(item.images) ? item.images[0]?.url || item.images[0] : '') ||
+            (Array.isArray(firstOpt?.images)
+              ? firstOpt.images[0]?.url || firstOpt.images[0]
+              : '') ||
             ''
         ).trim();
 
-        if (!title || !link || price <= 0) return null;
+        if (!title || !link || !Number.isFinite(price) || price <= 0) return null;
 
         const originalPrice = orig > price ? orig : undefined;
         const discountPercent =
-          Number(item.discount || item.discountPercent || 0) ||
+          Number(item.discount || item.discountPercent || firstPricing?.discount || 0) ||
           (originalPrice ? Math.round(((originalPrice - price) / originalPrice) * 100) : 0);
 
         const brandName = String(
-          item.brand?.name || item.store?.name || item.advertiser?.name || 'Lojas BR'
+          item.brand?.name ||
+            item.store?.name ||
+            item.advertiser?.name ||
+            item.organization?.name ||
+            'Lojas BR'
         );
 
         return {
@@ -146,10 +198,12 @@ export async function searchLomadeeOffers(
       .filter((o): o is Offer => o !== null);
 
     if (offers.length === 0) {
+      const sampleKeys = items[0] ? Object.keys(items[0]).join(', ') : 'none';
+      const sampleJson = items[0] ? JSON.stringify(items[0]).slice(0, 350) : '';
       return {
         offers: [],
         mode: 'demo',
-        error: 'Lomadee retornou itens sem preço/link válido.',
+        error: `Lomadee chaves=[${sampleKeys}] sample=${sampleJson}`,
       };
     }
 
